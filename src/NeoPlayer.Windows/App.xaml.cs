@@ -1,8 +1,10 @@
 using System.Windows;
+using System.Windows.Threading;
 using NeoPlayer.Windows.Core;
 using NeoPlayer.Windows.Data;
 using NeoPlayer.Windows.Services;
 using NeoPlayer.Windows.ViewModels;
+using NeoPlayer.Windows.Views;
 
 namespace NeoPlayer.Windows;
 
@@ -27,8 +29,25 @@ public partial class App : Application
 
             if (e.Args.Contains("--ui-smoke", StringComparer.OrdinalIgnoreCase))
             {
-                var smoke = new MainWindow { DataContext = vm };
-                smoke.Measure(new Size(1000, 700)); smoke.Arrange(new Rect(0, 0, 1000, 700)); smoke.UpdateLayout(); smoke.Close();
+                ShutdownMode = ShutdownMode.OnExplicitShutdown;
+
+                var smoke = new MainWindow { DataContext = vm, ShowInTaskbar = false };
+                MainWindow = smoke;
+                smoke.Show();
+                await Dispatcher.InvokeAsync(smoke.UpdateLayout, DispatcherPriority.ApplicationIdle);
+
+                var compact = new CompactPlayerWindow { Owner = smoke, DataContext = vm, ShowInTaskbar = false };
+                compact.Show();
+                await Dispatcher.InvokeAsync(compact.UpdateLayout, DispatcherPriority.ApplicationIdle);
+                compact.Close();
+
+                var advanced = new AdvancedToolsWindow { Owner = smoke, ShowInTaskbar = false };
+                advanced.Show();
+                await Dispatcher.InvokeAsync(advanced.UpdateLayout, DispatcherPriority.ApplicationIdle);
+                advanced.Close();
+
+                smoke.Close();
+                Console.WriteLine("NEO_UI_SMOKE_OK");
                 Shutdown(0); return;
             }
 
