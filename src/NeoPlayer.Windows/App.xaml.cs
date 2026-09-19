@@ -57,6 +57,8 @@ public sealed class AppHost : IDisposable
     public SettingsService Settings { get; } = new();
     public NeoDatabase Database { get; }
     public LibraryCollectionsService Collections { get; }
+    public PlaylistFolderManager PlaylistFolders { get; }
+    public PlaylistTransferService PlaylistTransfer { get; }
     public LibraryScanner Scanner { get; }
     public PlaybackEngine Playback { get; }
     public AudioAnalysisService Analysis { get; }
@@ -72,6 +74,8 @@ public sealed class AppHost : IDisposable
         AppPaths.Ensure();
         Database = new NeoDatabase();
         Collections = new LibraryCollectionsService();
+        PlaylistFolders = new PlaylistFolderManager();
+        PlaylistTransfer = new PlaylistTransferService(Database, Collections);
         Scanner = new LibraryScanner(Database, Settings);
         Playback = new PlaybackEngine(Database, Settings);
         Analysis = new AudioAnalysisService(Database);
