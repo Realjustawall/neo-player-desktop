@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-cleanroom-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test-build-run:
     runs-on: windows-latest
@@ -20,10 +24,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup .NET 8
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - name: Verify .NET 8 SDK
+        shell: pwsh
+        run: |
+          dotnet --version
+          if (-not ((dotnet --version).StartsWith('8.'))) { throw 'The pinned global.json did not select .NET 8.' }
       - name: Restore
         shell: pwsh
         run: dotnet restore NeoPlayer.Desktop.sln -r win-x64
