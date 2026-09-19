@@ -11,7 +11,13 @@ public sealed class NeoDatabase
     {
         var dbPath = path ?? AppPaths.Database;
         Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
-        _connectionString = new SqliteConnectionStringBuilder { DataSource = dbPath, Mode = SqliteOpenMode.ReadWriteCreate, Cache = SqliteCacheMode.Shared }.ToString();
+        _connectionString = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared,
+            Pooling = false
+        }.ToString();
     }
 
     private SqliteConnection Open() { var c = new SqliteConnection(_connectionString); c.Open(); return c; }
