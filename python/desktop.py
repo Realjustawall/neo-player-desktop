@@ -31,7 +31,7 @@ def data_dir() -> Path:
 class DesktopApi:
     def pick_folder(self) -> str | None:
         try:
-            result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+            result = webview.windows[0].create_file_dialog(webview.FileDialog.FOLDER)
             if not result:
                 return None
             return result[0] if isinstance(result, (list, tuple)) else str(result)
