@@ -20,8 +20,8 @@ public sealed class WindowsIntegrationService : IDisposable
     HwndSource? source;
     MMDeviceEnumerator? devices;
     DeviceNotification? notification;
-    Windows.Media.Playback.MediaPlayer? mediaPlayer;
-    Windows.Media.SystemMediaTransportControls? smtc;
+    global::Windows.Media.Playback.MediaPlayer? mediaPlayer;
+    global::Windows.Media.SystemMediaTransportControls? smtc;
     long lastMetadataSong = long.MinValue;
     long lastTimelineTick;
 
@@ -99,7 +99,7 @@ public sealed class WindowsIntegrationService : IDisposable
     {
         try
         {
-            mediaPlayer = new Windows.Media.Playback.MediaPlayer();
+            mediaPlayer = new global::Windows.Media.Playback.MediaPlayer();
             mediaPlayer.CommandManager.IsEnabled = false;
             smtc = mediaPlayer.SystemMediaTransportControls;
             smtc.IsEnabled = true; smtc.IsPlayEnabled = smtc.IsPauseEnabled = smtc.IsNextEnabled = smtc.IsPreviousEnabled = smtc.IsStopEnabled = true;
@@ -107,11 +107,11 @@ public sealed class WindowsIntegrationService : IDisposable
             {
                 switch (e.Button)
                 {
-                    case Windows.Media.SystemMediaTransportControlsButton.Play: playback.Resume(); break;
-                    case Windows.Media.SystemMediaTransportControlsButton.Pause: playback.Pause(); break;
-                    case Windows.Media.SystemMediaTransportControlsButton.Next: await playback.NextAsync(); break;
-                    case Windows.Media.SystemMediaTransportControlsButton.Previous: await playback.PreviousAsync(); break;
-                    case Windows.Media.SystemMediaTransportControlsButton.Stop: playback.Pause(); await playback.SeekAsync(0); break;
+                    case global::Windows.Media.SystemMediaTransportControlsButton.Play: playback.Resume(); break;
+                    case global::Windows.Media.SystemMediaTransportControlsButton.Pause: playback.Pause(); break;
+                    case global::Windows.Media.SystemMediaTransportControlsButton.Next: await playback.NextAsync(); break;
+                    case global::Windows.Media.SystemMediaTransportControlsButton.Previous: await playback.PreviousAsync(); break;
+                    case global::Windows.Media.SystemMediaTransportControlsButton.Stop: playback.Pause(); await playback.SeekAsync(0); break;
                 }
             };
             smtc.PlaybackPositionChangeRequested += async (_, e) => await playback.SeekAsync((long)e.RequestedPlaybackPosition.TotalMilliseconds);
@@ -125,24 +125,24 @@ public sealed class WindowsIntegrationService : IDisposable
         if (smtc is null) return;
         try
         {
-            smtc.PlaybackStatus = playback.State.Current is null ? Windows.Media.MediaPlaybackStatus.Closed : playback.State.IsPlaying ? Windows.Media.MediaPlaybackStatus.Playing : Windows.Media.MediaPlaybackStatus.Paused;
+            smtc.PlaybackStatus = playback.State.Current is null ? global::Windows.Media.MediaPlaybackStatus.Closed : playback.State.IsPlaying ? global::Windows.Media.MediaPlaybackStatus.Playing : global::Windows.Media.MediaPlaybackStatus.Paused;
             smtc.PlaybackRate = playback.State.Speed;
             var song = playback.State.Current;
             if (song is not null && song.Id != lastMetadataSong)
             {
                 lastMetadataSong = song.Id;
-                var u = smtc.DisplayUpdater; u.Type = Windows.Media.MediaPlaybackType.Music;
+                var u = smtc.DisplayUpdater; u.Type = global::Windows.Media.MediaPlaybackType.Music;
                 u.MusicProperties.Title = song.Title; u.MusicProperties.Artist = song.Artist; u.MusicProperties.AlbumTitle = song.Album;
                 var art = await artwork.ResolveAsync(song);
                 if (art is not null)
-                    u.Thumbnail = Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(await Windows.Storage.StorageFile.GetFileFromPathAsync(art));
+                    u.Thumbnail = global::Windows.Storage.Streams.RandomAccessStreamReference.CreateFromFile(await global::Windows.Storage.StorageFile.GetFileFromPathAsync(art));
                 u.Update();
             }
             var now = Environment.TickCount64;
             if (now - lastTimelineTick >= 750)
             {
                 lastTimelineTick = now;
-                var tl = new Windows.Media.SystemMediaTransportControlsTimelineProperties
+                var tl = new global::Windows.Media.SystemMediaTransportControlsTimelineProperties
                 {
                     StartTime = TimeSpan.Zero,
                     Position = TimeSpan.FromMilliseconds(playback.State.PositionMs),

@@ -1,0 +1,10 @@
+global using System.IO;
+global using Application = System.Windows.Application;
+global using Panel = System.Windows.Controls.Panel;
+global using Point = System.Windows.Point;
+global using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+global using DragEventArgs = System.Windows.DragEventArgs;
+global using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+global using Color = System.Windows.Media.Color;
+global using Image = System.Windows.Controls.Image;
+global using PlaybackState = NeoPlayer.Windows.Models.PlaybackState;
