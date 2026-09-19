@@ -36,6 +36,7 @@ public sealed class PlaybackEngine : IDisposable
     public Song? CurrentSong => _index >= 0 && _index < _queue.Count ? _queue[_index] : null;
     public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing;
     public double Volume { get; private set; }
+    public double PlaybackSpeed => _settings.Value.PlaybackSpeed;
     public bool Shuffle { get; private set; }
     public RepeatMode Repeat { get; private set; }
     public TimeSpan Position => _current?.Reader.CurrentTime ?? TimeSpan.FromSeconds(_settings.Value.PersistedPositionSeconds);
@@ -111,6 +112,34 @@ public sealed class PlaybackEngine : IDisposable
 
     public async Task NextAsync() => await ChangeTrackAsync(GetNextIndex());
     public async Task PreviousAsync() => await ChangeTrackAsync(_queue.Count == 0 ? -1 : Math.Max(0, _index - 1));
+
+    public async Task SetPlaybackSpeedAsync(double speed)
+    {
+        speed = Math.Clamp(speed, 0.5, 2.0);
+        await _gate.WaitAsync();
+        try
+        {
+            if (Math.Abs(_settings.Value.PlaybackSpeed - speed) < 0.001) return;
+            var position = Position;
+            var wasPlaying = IsPlaying;
+            _settings.Value.PlaybackSpeed = speed;
+            await _settings.SaveAsync();
+            var song = CurrentSong;
+            if (song is null || _current is null) { StateChanged?.Invoke(this, EventArgs.Empty); return; }
+
+            EnsureOutput();
+            StopDecks();
+            var mixer = _mixer ?? throw new InvalidOperationException("Audio mixer was not initialized.");
+            var output = _output ?? throw new InvalidOperationException("Audio output was not initialized.");
+            _current = CreateDeck(song);
+            _current.Reader.CurrentTime = position < _current.Reader.TotalTime ? position : TimeSpan.Zero;
+            _current.Volume.Volume = (float)Volume;
+            mixer.AddMixerInput(_current.Volume);
+            if (wasPlaying) output.Play(); else output.Pause();
+            StateChanged?.Invoke(this, EventArgs.Empty);
+        }
+        finally { _gate.Release(); }
+    }
 
     public async Task MoveQueueItemAsync(int fromIndex, int toIndex)
     {
@@ -320,6 +349,12 @@ public sealed class PlaybackEngine : IDisposable
         if (source.WaveFormat.Channels == 1) source = new MonoToStereoSampleProvider(source);
         else if (source.WaveFormat.Channels != 2) throw new InvalidDataException($"Unsupported channel count: {source.WaveFormat.Channels}");
         if (source.WaveFormat.SampleRate != 44100) source = new WdlResamplingSampleProvider(source, 44100);
+        var speed = Math.Clamp(_settings.Value.PlaybackSpeed, 0.5, 2.0);
+        if (Math.Abs(speed - 1) > 0.001)
+        {
+            source = new TempoSampleProvider(source, speed);
+            source = new SmbPitchShiftingSampleProvider(source) { PitchFactor = (float)(1d / speed) };
+        }
         var eq = new EqualizerSampleProvider(source);
         for (var i = 0; i < Math.Min(10, _settings.Value.EqualizerBands.Count); i++) eq.SetBand(i, _settings.Value.EqualizerBands[i]);
         eq.SetBass(_settings.Value.BassDb);
