@@ -54,7 +54,18 @@ public sealed class SettingsService
         Value.PlaybackSpeed = Math.Clamp(Value.PlaybackSpeed, 0.5, 2);
         Value.CrossfadeSeconds = Math.Clamp(Value.CrossfadeSeconds, 0, 15);
         Value.MinimumDurationSeconds = Math.Clamp(Value.MinimumDurationSeconds, 0, 600);
+        Value.PersistedPositionSeconds = Math.Max(0, Value.PersistedPositionSeconds);
         Value.SourceFolders = Value.SourceFolders.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         Value.ExcludedFolders = Value.ExcludedFolders.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        Value.PersistedQueuePaths = Value.PersistedQueuePaths.Where(x => !string.IsNullOrWhiteSpace(x)).Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).Take(5000).ToList();
+        Value.PersistedQueueIndex = Value.PersistedQueuePaths.Count == 0 ? -1 : Math.Clamp(Value.PersistedQueueIndex, 0, Value.PersistedQueuePaths.Count - 1);
+        Value.EqualizerBands ??= new List<float>();
+        while (Value.EqualizerBands.Count < 10) Value.EqualizerBands.Add(0f);
+        if (Value.EqualizerBands.Count > 10) Value.EqualizerBands = Value.EqualizerBands.Take(10).ToList();
+        for (var i = 0; i < Value.EqualizerBands.Count; i++) Value.EqualizerBands[i] = Math.Clamp(Value.EqualizerBands[i], -12f, 12f);
+        Value.BassDb = Math.Clamp(Value.BassDb, -12f, 12f);
+        Value.StereoWidth = Math.Clamp(Value.StereoWidth, 0f, 2f);
+        Value.WindowWidth = Math.Clamp(Value.WindowWidth, 900, 3840);
+        Value.WindowHeight = Math.Clamp(Value.WindowHeight, 600, 2160);
     }
 }
