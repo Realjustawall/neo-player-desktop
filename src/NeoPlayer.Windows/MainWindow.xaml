@@ -101,7 +101,7 @@
 
           <TextBlock Text="Excluded folders" FontSize="18" FontWeight="SemiBold"/><ListBox ItemsSource="{Binding ExcludedSources}" MaxHeight="110"><ListBox.ItemTemplate><DataTemplate><DockPanel><Button DockPanel.Dock="Right" Content="Remove" Command="{Binding DataContext.RemoveExcludedSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/><TextBlock Text="{Binding}"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox><Button Content="Exclude folder" Command="{Binding AddExcludedSourceCommand}" HorizontalAlignment="Left"/>
 
-          <Separator Margin="0,14"/><TextBlock Text="Appearance & Windows" FontSize="18" FontWeight="SemiBold"/>
+          <Separator Margin="0,14"/><TextBlock Text="Appearance &amp; Windows" FontSize="18" FontWeight="SemiBold"/>
           <WrapPanel><TextBlock Text="Theme" VerticalAlignment="Center" Margin="4"/><ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding SelectedTheme, Mode=TwoWay}" Width="130"/><TextBlock Text="Accent" VerticalAlignment="Center" Margin="12,4,4,4"/><ComboBox ItemsSource="{Binding Accents}" SelectedItem="{Binding Accent, Mode=TwoWay}" Width="130"/><TextBlock Text="Language" VerticalAlignment="Center" Margin="12,4,4,4"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Language, Mode=TwoWay}" Width="100"/></WrapPanel>
           <CheckBox Content="Start NEO Player with Windows" IsChecked="{Binding StartWithWindows, Mode=TwoWay}" Margin="4,8"/>
 
