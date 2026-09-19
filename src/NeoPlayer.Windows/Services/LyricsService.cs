@@ -1,16 +1,34 @@
-using NeoPlayer.Windows.Data;
-using NeoPlayer.Windows.Models;
-using System.Net.Http.Json;
+using System.Globalization;
 using System.Text.RegularExpressions;
+using NeoPlayer.Windows.Models;
+
 namespace NeoPlayer.Windows.Services;
-public sealed class LyricsService(NeoDatabase db)
+
+public static partial class LyricsService
 {
- static readonly Regex Lrc=new(@"\[(?<m>\d{1,3}):(?<s>\d{1,2})(?:[\.:](?<f>\d{1,3}))?\](?<t>.*)",RegexOptions.Compiled);
- public IReadOnlyList<LrcLine> Parse(string text){var list=new List<LrcLine>();foreach(var raw in text.Replace("\r","").Split('\n')){var m=Lrc.Match(raw);if(!m.Success)continue;int mm=int.Parse(m.Groups["m"].Value),ss=int.Parse(m.Groups["s"].Value);string fs=m.Groups["f"].Value;int frac=fs.Length switch{1=>int.Parse(fs)*100,2=>int.Parse(fs)*10,3=>int.Parse(fs),_=>0};list.Add(new((mm*60L+ss)*1000+frac,m.Groups["t"].Value.Trim()));}return list.OrderBy(x=>x.TimeMs).ToList();}
- public string ToLrc(IEnumerable<LrcLine> lines)=>string.Join(Environment.NewLine,lines.OrderBy(x=>x.TimeMs).Select(x=>$"[{x.TimeMs/60000:00}:{(x.TimeMs%60000)/1000:00}.{x.TimeMs%1000/10:00}]{x.Text}"));
- public async Task<LyricsRecord?> LoadAsync(Song song,CancellationToken ct=default){var saved=await db.GetLyricsAsync(song.Id);if(saved is not null)return saved;foreach(var ext in new[]{".lrc",".txt"}){var p=Path.ChangeExtension(song.Path,ext);if(File.Exists(p)){var t=await File.ReadAllTextAsync(p,ct);var rec=new LyricsRecord(song.Id,t,"","",ext==".lrc","sidecar",DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());await db.SaveLyricsAsync(rec);return rec;}}return null;}
- public async Task ImportAsync(Song song,string file,CancellationToken ct=default){var text=await File.ReadAllTextAsync(file,ct);await db.SaveLyricsAsync(new(song.Id,text,"","",Path.GetExtension(file).Equals(".lrc",StringComparison.OrdinalIgnoreCase),"import",DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));}
- public async Task SaveAuthoredAsync(Song song,IEnumerable<LrcLine> lines,string translation="",string romanization=""){await db.SaveLyricsAsync(new(song.Id,ToLrc(lines),translation,romanization,true,"authored",DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));}
- public async Task<LyricsRecord?> FetchConfiguredProviderAsync(Song song,string endpoint,bool strictOffline,CancellationToken ct=default){if(strictOffline||string.IsNullOrWhiteSpace(endpoint))return null;using var http=new HttpClient{Timeout=TimeSpan.FromSeconds(8)};var u=endpoint.Replace("{title}",Uri.EscapeDataString(song.Title)).Replace("{artist}",Uri.EscapeDataString(song.Artist)).Replace("{album}",Uri.EscapeDataString(song.Album));try{var dto=await http.GetFromJsonAsync<ProviderDto>(u,ct);if(dto is null)return null;var text=string.IsNullOrWhiteSpace(dto.SyncedLyrics)?dto.PlainLyrics:dto.SyncedLyrics;var rec=new LyricsRecord(song.Id,text??"",dto.Translation??"",dto.Romanization??"",!string.IsNullOrWhiteSpace(dto.SyncedLyrics),"provider",DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());await db.SaveLyricsAsync(rec);return rec;}catch{return null;}}
- sealed record ProviderDto(string? PlainLyrics,string? SyncedLyrics,string? Translation,string? Romanization);
+    [GeneratedRegex(@"\[(?<m>\d{1,2}):(?<s>\d{2})(?:[\.:](?<f>\d{1,3}))?\](?<t>.*)")]
+    private static partial Regex LrcRegex();
+
+    public static IReadOnlyList<LyricLine> ParseLrc(string text)
+    {
+        var list = new List<LyricLine>();
+        foreach (var raw in text.Replace("\r", "").Split('\n'))
+        {
+            var m = LrcRegex().Match(raw);
+            if (!m.Success) continue;
+            var min = int.Parse(m.Groups["m"].Value, CultureInfo.InvariantCulture);
+            var sec = int.Parse(m.Groups["s"].Value, CultureInfo.InvariantCulture);
+            var fracRaw = m.Groups["f"].Value;
+            var ms = fracRaw.Length switch { 0 => 0, 1 => int.Parse(fracRaw) * 100, 2 => int.Parse(fracRaw) * 10, _ => int.Parse(fracRaw[..Math.Min(3, fracRaw.Length)]) };
+            list.Add(new LyricLine(TimeSpan.FromMilliseconds((min * 60 + sec) * 1000 + ms), m.Groups["t"].Value.Trim()));
+        }
+        return list.OrderBy(x => x.Time).ToArray();
+    }
+
+    public static string? FindSidecar(string audioPath)
+    {
+        var basePath = Path.Combine(Path.GetDirectoryName(audioPath) ?? "", Path.GetFileNameWithoutExtension(audioPath));
+        foreach (var ext in new[] { ".lrc", ".txt" }) if (File.Exists(basePath + ext)) return basePath + ext;
+        return null;
+    }
 }

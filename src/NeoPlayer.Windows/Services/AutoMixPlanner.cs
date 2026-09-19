@@ -1,9 +1,0 @@
-using NeoPlayer.Windows.Data;
-using NeoPlayer.Windows.Models;
-namespace NeoPlayer.Windows.Services;
-public sealed record TransitionPlan(long DurationMs,long StartAtMs,float NextSpeed,long NextSeekMs,string Reason);
-public sealed class AutoMixPlanner(NeoDatabase db)
-{
- public async Task<TransitionPlan> PlanAsync(Song current,Song next,long fallbackMs,CancellationToken ct=default){var a=await db.GetAdvancedAnalysisAsync(current.Id);var b=await db.GetAdvancedAnalysisAsync(next.Id);if(a is null||b is null||a.Bpm<=0||b.Bpm<=0)return new(Math.Clamp(fallbackMs>0?fallbackMs:6000,1200,12000),Math.Max(0,current.DurationMs-(fallbackMs>0?fallbackMs:6000)),1,0,"fallback");float ratio=a.Bpm/b.Bpm;ratio=Math.Clamp(ratio,.94f,1.06f);float key=KeyCompatibility(a.CamelotKey,b.CamelotKey);float energy=Math.Abs(a.Energy-b.Energy);long beat=(long)Math.Max(220,a.BeatIntervalMs);int phrase=Math.Clamp(a.PhraseLengthBeats,8,32);long desired=(long)Math.Clamp(beat*Math.Min(phrase,16),2200,10000);if(key<.4f)desired=(long)(desired*.72);if(energy>.35f)desired=(long)(desired*.82);long raw=Math.Max(0,current.DurationMs-desired);long phase=(long)a.BeatOffsetMs;long start=phase+Math.Max(0,(raw-phase)/beat)*beat;long nextSeek=(long)Math.Max(0,b.PhraseOffsetMs);return new(desired,start,ratio,nextSeek,$"tempo {a.Bpm:0.#}->{b.Bpm:0.#}, key {a.CamelotKey}/{b.CamelotKey}");}
- static float KeyCompatibility(string a,string b){if(string.IsNullOrWhiteSpace(a)||string.IsNullOrWhiteSpace(b))return .5f;if(a==b)return 1;int Parse(string s)=>int.TryParse(new string(s.TakeWhile(char.IsDigit).ToArray()),out var n)?n:0;var na=Parse(a);var nb=Parse(b);if(na==0||nb==0)return .5f;int d=Math.Min(Math.Abs(na-nb),12-Math.Abs(na-nb));bool same=a[^1]==b[^1];return d==0?.9f:d==1&&same?.8f:d==0&&!same?.75f:.2f;}
-}

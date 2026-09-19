@@ -1,83 +1,60 @@
-using NeoPlayer.Windows.Models;
-using System.ComponentModel;
 using System.Text.Json;
+using NeoPlayer.Windows.Core;
+using NeoPlayer.Windows.Models;
 
 namespace NeoPlayer.Windows.Services;
 
-public sealed class SettingsService : IAsyncDisposable
+public sealed class SettingsService
 {
-    public AppSettings Current { get; private set; } = new();
-    readonly JsonSerializerOptions json = new() { WriteIndented = true, PropertyNameCaseInsensitive = true };
-    readonly SemaphoreSlim saveGate = new(1, 1);
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly JsonSerializerOptions _json = new() { WriteIndented = true };
+    public AppSettings Value { get; private set; } = new();
     public event EventHandler? Changed;
 
     public async Task LoadAsync()
     {
         AppPaths.Ensure();
-        if (File.Exists(AppPaths.Settings))
+        if (!File.Exists(AppPaths.Settings)) { await SaveAsync(); return; }
+        try
         {
-            try { Current = JsonSerializer.Deserialize<AppSettings>(await File.ReadAllTextAsync(AppPaths.Settings), json) ?? new(); }
-            catch { Current = new(); }
+            await using var stream = File.OpenRead(AppPaths.Settings);
+            Value = await JsonSerializer.DeserializeAsync<AppSettings>(stream, _json) ?? new AppSettings();
+            Normalize();
         }
-        Normalize();
-        Hook();
-        Changed?.Invoke(this, EventArgs.Empty);
+        catch { Value = new AppSettings(); }
     }
 
-    void Normalize()
+    public async Task SaveAsync()
     {
-        Current.RecentSearches ??= [];
-        Current.IncludedFolders ??= [];
-        Current.ExcludedFolders ??= [];
-        Current.RecentSearches = Current.RecentSearches.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase).Take(12).ToList();
-        Current.IncludedFolders = NormalizePaths(Current.IncludedFolders);
-        Current.ExcludedFolders = NormalizePaths(Current.ExcludedFolders);
-    }
-
-    static List<string> NormalizePaths(IEnumerable<string> values) => values
-        .Where(x => !string.IsNullOrWhiteSpace(x))
-        .Select(x => { try { return Path.GetFullPath(x); } catch { return x.Trim(); } })
-        .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-
-    void Hook()
-    {
-        Current.PropertyChanged -= OnChanged;
-        Current.PropertyChanged += OnChanged;
-    }
-
-    async void OnChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        try { await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
-        catch { /* settings write failure must not crash playback/UI */ }
-    }
-
-    public async Task SaveAsync(CancellationToken ct = default)
-    {
-        await saveGate.WaitAsync(ct);
+        await _gate.WaitAsync();
         try
         {
             AppPaths.Ensure();
-            var tmp = AppPaths.Settings + ".tmp";
-            var jsonText = JsonSerializer.Serialize(Current, json);
-            await File.WriteAllTextAsync(tmp, jsonText, ct);
-            File.Move(tmp, AppPaths.Settings, true);
+            Normalize();
+            var temp = AppPaths.Settings + ".tmp";
+            await File.WriteAllTextAsync(temp, JsonSerializer.Serialize(Value, _json));
+            File.Move(temp, AppPaths.Settings, true);
+            Changed?.Invoke(this, EventArgs.Empty);
         }
-        finally { saveGate.Release(); }
+        finally { _gate.Release(); }
     }
 
-    public async Task AddRecentSearchAsync(string q)
+    public async Task AddRecentSearchAsync(string value)
     {
-        q = q.Trim(); if (q.Length == 0) return;
-        Current.RecentSearches.RemoveAll(x => x.Equals(q, StringComparison.OrdinalIgnoreCase));
-        Current.RecentSearches.Insert(0, q);
-        if (Current.RecentSearches.Count > 12) Current.RecentSearches.RemoveRange(12, Current.RecentSearches.Count - 12);
-        await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty);
+        value = value.Trim(); if (value.Length == 0) return;
+        Value.RecentSearches.RemoveAll(x => string.Equals(x, value, StringComparison.OrdinalIgnoreCase));
+        Value.RecentSearches.Insert(0, value);
+        if (Value.RecentSearches.Count > 12) Value.RecentSearches.RemoveRange(12, Value.RecentSearches.Count - 12);
+        await SaveAsync();
     }
-    public async Task ClearRecentSearchesAsync() { Current.RecentSearches.Clear(); await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
-    public async Task AddIncludedFolderAsync(string p) { p = Path.GetFullPath(p); if (!Current.IncludedFolders.Contains(p, StringComparer.OrdinalIgnoreCase)) Current.IncludedFolders.Add(p); await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
-    public async Task AddExcludedFolderAsync(string p) { p = Path.GetFullPath(p); if (!Current.ExcludedFolders.Contains(p, StringComparer.OrdinalIgnoreCase)) Current.ExcludedFolders.Add(p); await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
-    public async Task RemoveIncludedFolderAsync(string p) { Current.IncludedFolders.RemoveAll(x => x.Equals(p, StringComparison.OrdinalIgnoreCase)); await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
-    public async Task RemoveExcludedFolderAsync(string p) { Current.ExcludedFolders.RemoveAll(x => x.Equals(p, StringComparison.OrdinalIgnoreCase)); await SaveAsync(); Changed?.Invoke(this, EventArgs.Empty); }
 
-    public ValueTask DisposeAsync() { saveGate.Dispose(); return ValueTask.CompletedTask; }
+    private void Normalize()
+    {
+        Value.Volume = Math.Clamp(Value.Volume, 0, 1);
+        Value.PlaybackSpeed = Math.Clamp(Value.PlaybackSpeed, 0.5, 2);
+        Value.CrossfadeSeconds = Math.Clamp(Value.CrossfadeSeconds, 0, 15);
+        Value.MinimumDurationSeconds = Math.Clamp(Value.MinimumDurationSeconds, 0, 600);
+        Value.SourceFolders = Value.SourceFolders.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        Value.ExcludedFolders = Value.ExcludedFolders.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
 }

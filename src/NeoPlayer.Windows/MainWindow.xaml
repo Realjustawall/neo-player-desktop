@@ -1,400 +1,87 @@
 <Window x:Class="NeoPlayer.Windows.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:controls="clr-namespace:NeoPlayer.Windows.Controls"
-        xmlns:vm="clr-namespace:NeoPlayer.Windows.ViewModels"
-        mc:Ignorable="d"
-        x:Name="RootWindow"
-        Title="NEO Player" Width="1280" Height="820" MinWidth="980" MinHeight="680"
-        WindowStyle="None" ResizeMode="CanResize" AllowsTransparency="False"
-        Background="{DynamicResource NeoBackground}"
-        FlowDirection="{Binding FlowDirection}" PreviewKeyDown="MainWindow_PreviewKeyDown">
-    <Window.Resources>
-        <ItemsPanelTemplate x:Key="HorizontalPanel"><StackPanel Orientation="Horizontal"/></ItemsPanelTemplate>
-        <ItemsPanelTemplate x:Key="WrapPanelTemplate"><WrapPanel/></ItemsPanelTemplate>
+        xmlns:models="clr-namespace:NeoPlayer.Windows.Models"
+        Title="NEO Player" Width="1180" Height="760" MinWidth="900" MinHeight="600"
+        WindowStartupLocation="CenterScreen">
+  <Grid Margin="14">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="190"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="94"/></Grid.RowDefinitions>
 
-        <DataTemplate x:Key="SongRowTemplate">
-            <Border Background="{DynamicResource NeoSurfaceLow}" CornerRadius="16" Margin="4,3" Padding="8">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="54"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <Border Width="46" Height="46" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource NeoSurfaceHigh}">
-                        <controls:ArtworkImage Song="{Binding}" Stretch="UniformToFill"/>
-                    </Border>
-                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" Foreground="{DynamicResource NeoMuted}" VerticalAlignment="Center" Margin="8"/>
-                    <Button Grid.Column="3" Style="{StaticResource IconButton}" Content="▶" ToolTip="Play" Command="{Binding DataContext.PlaySongCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="⋮" ToolTip="More" Click="SongMore_Click" Tag="{Binding}"/>
-                </Grid>
-            </Border>
-        </DataTemplate>
+    <Border Grid.RowSpan="2" Grid.Column="0" Background="{DynamicResource NeoPanel}" CornerRadius="18" Padding="12" Margin="0,0,12,0">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Top">
+          <TextBlock Text="NEO" FontSize="30" FontWeight="Bold" Margin="10,8,10,22"/>
+          <Button Content="⌂  {DynamicResource Home}" Command="{Binding HomeCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="⌕  {DynamicResource Search}" Command="{Binding SearchPageCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="♫  {DynamicResource Library}" Command="{Binding LibraryCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="⚙  {DynamicResource Settings}" Command="{Binding SettingsCommand}" HorizontalContentAlignment="Left"/>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom">
+          <TextBlock Text="{Binding Status}" Foreground="{DynamicResource NeoMuted}" TextWrapping="Wrap" Margin="10"/>
+        </StackPanel>
+      </DockPanel>
+    </Border>
 
-        <DataTemplate x:Key="SongTileTemplate">
-            <Border Width="180" Margin="7" Padding="10" Background="{DynamicResource NeoSurfaceLow}" CornerRadius="18">
-                <StackPanel>
-                    <Border Width="158" Height="158" CornerRadius="15" ClipToBounds="True" Background="{DynamicResource NeoSurfaceHigh}">
-                        <controls:ArtworkImage Song="{Binding}" Stretch="UniformToFill"/>
-                    </Border>
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="14" Margin="2,9,2,1" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="12" TextTrimming="CharacterEllipsis"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-                        <Button Style="{StaticResource IconButton}" Content="▶" Command="{Binding DataContext.PlaySongCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button Style="{StaticResource IconButton}" Content="⋮" Click="SongMore_Click" Tag="{Binding}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-        </DataTemplate>
-
-        <DataTemplate x:Key="CollectionCardTemplate">
-            <Border Width="210" Margin="7" Padding="14" Background="{DynamicResource NeoSurfaceLow}" CornerRadius="18">
-                <StackPanel>
-                    <Border Height="120" CornerRadius="14" Background="{DynamicResource NeoAccentContainer}">
-                        <Grid>
-                            <TextBlock Text="♫" Foreground="{DynamicResource NeoAccent}" FontSize="44" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <Image Source="{Binding ArtworkPath}" Stretch="UniformToFill"/>
-                        </Grid>
-                    </Border>
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="15" Margin="2,10,2,2" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Subtitle}" Foreground="{DynamicResource NeoMuted}" FontSize="11" Height="30" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Style="{StaticResource IconButton}" Content="★" ToolTip="Pin" Command="{Binding DataContext.PinCollectionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/><Button Style="{StaticResource IconButton}" Content="⋮" ToolTip="Manage" Click="CollectionMore_Click" Tag="{Binding}"/>
-                        <Button Style="{StaticResource IconButton}" Content="♡" ToolTip="Favorite collection" Command="{Binding DataContext.FavoriteCollectionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                        <Button Style="{StaticResource AccentButton}" Content="Open" Command="{Binding DataContext.OpenCollectionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/>
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-        </DataTemplate>
-
-        <DataTemplate x:Key="CompactSongTemplate">
-            <Button Command="{Binding DataContext.PlaySongCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}" Padding="0" Background="Transparent" BorderThickness="0">
-                <Border Width="154" Padding="8" Background="{DynamicResource NeoSurfaceLow}" CornerRadius="15">
-                    <StackPanel>
-                        <Border Width="138" Height="108" CornerRadius="12" ClipToBounds="True" Background="{DynamicResource NeoSurfaceHigh}"><controls:ArtworkImage Song="{Binding}" Stretch="UniformToFill"/></Border>
-                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Margin="2,7,2,0" TextTrimming="CharacterEllipsis"/>
-                        <TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                    </StackPanel>
-                </Border>
-            </Button>
-        </DataTemplate>
-    </Window.Resources>
-
-    <Grid Background="{DynamicResource NeoBackground}">
-        <!-- Per-track wallpaper lives behind the whole shell. -->
-        <Image Source="{Binding Theme.WallpaperPath}" Stretch="UniformToFill" Opacity="{Binding Theme.WallpaperOpacity}" Visibility="{Binding Theme.WallpaperPath, Converter={StaticResource NonEmptyToVisibility}}">
-            <Image.Effect><BlurEffect Radius="{Binding Theme.WallpaperBlur}"/></Image.Effect>
-        </Image>
-        <Border Background="{DynamicResource NeoBackground}" Opacity="0.80"/>
-
-        <Grid>
-            <Grid.RowDefinitions><RowDefinition Height="48"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="72"/></Grid.RowDefinitions>
-
-            <!-- custom title bar -->
-            <Border Grid.Row="0" Background="{DynamicResource NeoSurfaceLow}" BorderBrush="{DynamicResource NeoOutline}" BorderThickness="0,0,0,1" MouseLeftButtonDown="TitleBar_MouseLeftButtonDown">
-                <Grid Margin="14,0,8,0">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Border Width="28" Height="28" CornerRadius="8" Background="Black" Margin="0,0,10,0"><TextBlock Text="N" Foreground="{DynamicResource NeoAccent}" FontWeight="Bold" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-                        <TextBlock Text="NEO PLAYER" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
-                        <TextBlock Text="  •  Windows" Foreground="{DynamicResource NeoMuted}" FontSize="11" VerticalAlignment="Center"/>
-                    </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" FlowDirection="LeftToRight">
-                        <Button Style="{StaticResource IconButton}" Content="⚙" Command="{Binding OpenSettingsCommand}" ToolTip="Settings"/>
-                        <Button Style="{StaticResource IconButton}" Content="—" Click="Minimize_Click"/>
-                        <Button Style="{StaticResource IconButton}" Content="□" Click="Maximize_Click"/>
-                        <Button Style="{StaticResource IconButton}" Content="×" Click="Close_Click"/>
-                    </StackPanel>
-                </Grid>
-            </Border>
-
-            <!-- PAGES -->
-            <Grid Grid.Row="1">
-                <!-- HOME -->
-                <ScrollViewer Visibility="{Binding CurrentPage, Converter={StaticResource EnumToVisibility}, ConverterParameter=Home}" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="24,20,24,30">
-                        <Grid Margin="0,0,0,14">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Greeting}" FontSize="31" FontWeight="Bold"/>
-                                <TextBlock Text="Your music stays yours." Foreground="{DynamicResource NeoMuted}" FontSize="14" Margin="0,4,0,0"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                <Button Content="Analyze" Command="{Binding AnalyzeLibraryCommand}"/>
-                                <Button Content="{DynamicResource StrRescan}" Command="{Binding RescanCommand}"/>
-                            </StackPanel>
-                        </Grid>
-
-                        <TextBlock Text="Pinned" FontSize="20" FontWeight="SemiBold" Margin="0,16,0,8" Visibility="{Binding PinnedCards.Count, Converter={StaticResource NullToVisibility}}"/>
-                        <ListBox ItemsSource="{Binding PinnedCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="230"/>
-
-                        <TextBlock Text="Recently added" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ListBox ItemsSource="{Binding RecentSongs}" ItemTemplate="{StaticResource CompactSongTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="176"/>
-
-                        <TextBlock Text="For you" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ItemsControl ItemsSource="{Binding Recommendations}">
-                            <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Width="260" Margin="5" Padding="10" Background="{DynamicResource NeoSurfaceLow}" CornerRadius="16">
-                                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="62"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                                            <Border Width="54" Height="54" CornerRadius="12" ClipToBounds="True" Background="{DynamicResource NeoSurfaceHigh}"><controls:ArtworkImage Song="{Binding Song}" Stretch="UniformToFill"/></Border>
-                                            <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                                                <TextBlock Text="{Binding Song.Title}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Text="{Binding Reason}" Foreground="{DynamicResource NeoMuted}" FontSize="11" TextTrimming="CharacterEllipsis"/>
-                                                <StackPanel Orientation="Horizontal">
-                                                    <Button Style="{StaticResource IconButton}" Content="▶" Command="{Binding DataContext.PlaySongCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Song}"/>
-                                                    <Button Style="{StaticResource IconButton}" Content="＋" ToolTip="More like this" Command="{Binding DataContext.MoreLikeCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Song}"/>
-                                                    <Button Style="{StaticResource IconButton}" Content="−" ToolTip="Less like this" Command="{Binding DataContext.LessLikeCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding Song}"/>
-                                                </StackPanel>
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Text="Recently played" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ListBox ItemsSource="{Binding RecentlyPlayed}" ItemTemplate="{StaticResource CompactSongTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="176"/>
-                        <TextBlock Text="Most played" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ListBox ItemsSource="{Binding MostPlayed}" ItemTemplate="{StaticResource CompactSongTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="176"/>
-                        <TextBlock Text="Time-of-day mix" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ListBox ItemsSource="{Binding DayMix}" ItemTemplate="{StaticResource CompactSongTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="176"/>
-                        <TextBlock Text="Forgotten favorites" FontSize="20" FontWeight="SemiBold" Margin="0,18,0,8"/>
-                        <ListBox ItemsSource="{Binding ForgottenFavorites}" ItemTemplate="{StaticResource CompactSongTemplate}" ItemsPanel="{StaticResource HorizontalPanel}" ScrollViewer.HorizontalScrollBarVisibility="Auto" Height="176"/>
-                    </StackPanel>
-                </ScrollViewer>
-
-                <!-- SEARCH -->
-                <Grid Visibility="{Binding CurrentPage, Converter={StaticResource EnumToVisibility}, ConverterParameter=Search}" Margin="24,18">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{DynamicResource StrSearch}" FontSize="30" FontWeight="Bold" Margin="0,0,0,12"/><Button Grid.Column="1" Content="{DynamicResource StrClearRecent}" Command="{Binding ClearRecentSearchesCommand}"/></Grid>
-                    <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" FontSize="18" Height="48" KeyDown="SearchBox_KeyDown" ToolTip="Search title, artist, album, genre or composer"/>
-                    <ListBox Grid.Row="1" ItemsSource="{Binding SearchSuggestions}" ItemsPanel="{StaticResource HorizontalPanel}" MaxHeight="60" Margin="0,8">
-                        <ListBox.ItemTemplate><DataTemplate><Button Command="{Binding DataContext.ApplySuggestionCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Text}"/><TextBlock Text="  ·  "/><TextBlock Text="{Binding Kind}" Foreground="{DynamicResource NeoMuted}"/></StackPanel></Button></DataTemplate></ListBox.ItemTemplate>
-                    </ListBox>
-                    <ListBox Grid.Row="2" ItemsSource="{Binding SearchResults}" ItemTemplate="{StaticResource SongRowTemplate}"/>
-                </Grid>
-
-                <!-- LIBRARY -->
-                <Grid Visibility="{Binding CurrentPage, Converter={StaticResource EnumToVisibility}, ConverterParameter=Library}" Margin="20,14">
-                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-                    <Grid>
-                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                        <StackPanel><TextBlock Text="{DynamicResource StrLibrary}" FontSize="30" FontWeight="Bold"/><TextBlock Text="{Binding LibraryCountText}" Foreground="{DynamicResource NeoMuted}"/></StackPanel>
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                            <Button Content="＋ Folder" Command="{Binding AddMusicFolderCommand}"/>
-                            <Button Content="Hidden" Command="{Binding OpenHiddenCommand}"/>
-                            <Button Content="☷" ToolTip="List view" Command="{Binding SetListViewCommand}"/>
-                            <Button Content="▦" ToolTip="Grid view" Command="{Binding SetGridViewCommand}"/>
-                        </StackPanel>
-                    </Grid>
-                    <TabControl Grid.Row="1" Margin="0,12,0,0">
-                        <TabItem Header="Songs"><Grid>
-                            <ListBox ItemsSource="{Binding Songs}" ItemTemplate="{StaticResource SongRowTemplate}" Visibility="{Binding Settings.LibraryViewMode, Converter={StaticResource EnumToVisibility}, ConverterParameter=List}"/>
-                            <ListBox ItemsSource="{Binding Songs}" ItemTemplate="{StaticResource SongTileTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}" Visibility="{Binding Settings.LibraryViewMode, Converter={StaticResource EnumToVisibility}, ConverterParameter=Grid}"/>
-                        </Grid></TabItem>
-                        <TabItem Header="Albums"><ScrollViewer><ItemsControl ItemsSource="{Binding AlbumCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></TabItem>
-                        <TabItem Header="Artists"><ScrollViewer><ItemsControl ItemsSource="{Binding ArtistCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></TabItem>
-                        <TabItem Header="Genres"><ScrollViewer><ItemsControl ItemsSource="{Binding GenreCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></TabItem>
-                        <TabItem Header="Folders"><ScrollViewer><ItemsControl ItemsSource="{Binding FolderCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></TabItem>
-                        <TabItem Header="Playlists"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><StackPanel Orientation="Horizontal"><Button Content="New playlist" Command="{Binding CreatePlaylistCommand}"/><Button Content="New folder" Command="{Binding CreateFolderCommand}"/><Button Content="{DynamicResource StrImportM3U}" Command="{Binding ImportM3uCommand}"/><Button Content="{DynamicResource StrExportM3U}" Command="{Binding ExportM3uCommand}"/></StackPanel><ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding PlaylistCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></Grid></TabItem>
-                        <TabItem Header="Categories"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><Button HorizontalAlignment="Left" Content="New category" Command="{Binding CreateCategoryCommand}"/><ScrollViewer Grid.Row="1"><ItemsControl ItemsSource="{Binding CategoryCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></Grid></TabItem>
-                        <TabItem Header="Playlist folders">
-                            <Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><Button HorizontalAlignment="Left" Content="New folder" Command="{Binding CreateFolderCommand}"/>
-                                <TreeView Grid.Row="1" ItemsSource="{Binding FolderTree}" Background="Transparent" Foreground="{DynamicResource NeoText}" BorderThickness="0" Margin="8">
-                                    <TreeView.Resources>
-                                        <HierarchicalDataTemplate DataType="{x:Type vm:PlaylistFolderNode}" ItemsSource="{Binding Children}">
-                                            <StackPanel><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding Title}" FontWeight="SemiBold" VerticalAlignment="Center"/><Button Style="{StaticResource IconButton}" Content="⋮" Tag="{Binding Folder}" Click="FolderMore_Click"/></StackPanel><ItemsControl ItemsSource="{Binding Playlists}"><ItemsControl.ItemTemplate><DataTemplate><Button Content="{Binding Title}" Tag="{Binding}" Click="OpenPlaylist_Click" HorizontalContentAlignment="Left" Background="Transparent" BorderThickness="0" Margin="12,1"/></DataTemplate></ItemsControl.ItemTemplate></ItemsControl></StackPanel>
-                                        </HierarchicalDataTemplate>
-                                    </TreeView.Resources>
-                                </TreeView>
-                            </Grid>
-                        </TabItem>
-                        <TabItem Header="Pinned"><ScrollViewer><ItemsControl ItemsSource="{Binding PinnedCards}" ItemTemplate="{StaticResource CollectionCardTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}"/></ScrollViewer></TabItem>
-                        <TabItem Header="Offline"><Grid><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><Button HorizontalAlignment="Left" Content="Refresh offline set" Command="{Binding RefreshOfflineBackupCommand}"/><ListBox Grid.Row="1" ItemsSource="{Binding OfflineBackupSongs}" ItemTemplate="{StaticResource SongRowTemplate}"/></Grid></TabItem>
-                    </TabControl>
-                </Grid>
+    <Grid Grid.Column="1" Grid.Row="0">
+      <Grid Visibility="{Binding IsHome, Converter={StaticResource BoolToVisibility}}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <StackPanel Margin="12,4,12,18">
+          <TextBlock Text="Good evening" Foreground="{DynamicResource NeoMuted}" FontSize="14"/>
+          <TextBlock Text="Your music, offline." FontSize="34" FontWeight="SemiBold"/>
+        </StackPanel>
+        <ListBox Grid.Row="1" ItemsSource="{Binding Songs}" MouseDoubleClick="SongList_DoubleClick">
+          <ListBox.ItemTemplate><DataTemplate DataType="{x:Type models:Song}">
+            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="220"/><ColumnDefinition Width="80"/></Grid.ColumnDefinitions>
+              <StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="12"/></StackPanel>
+              <TextBlock Grid.Column="1" Text="{Binding Album}" VerticalAlignment="Center" Foreground="{DynamicResource NeoMuted}" TextTrimming="CharacterEllipsis"/>
+              <TextBlock Grid.Column="2" Text="{Binding PlayCount, StringFormat={}▶ {0}}" VerticalAlignment="Center" Foreground="{DynamicResource NeoMuted}"/>
             </Grid>
+          </DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
 
-            <!-- MINI PLAYER -->
-            <Border Grid.Row="2" Background="{DynamicResource NeoSurfaceHigh}" BorderBrush="{DynamicResource NeoOutline}" BorderThickness="0,1,0,0" Visibility="{Binding Playback.Current, Converter={StaticResource NullToVisibility}}" MouseLeftButtonUp="MiniPlayer_Click">
-                <Grid Margin="12,8">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="54"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                    <Border Width="46" Height="46" CornerRadius="10" ClipToBounds="True" Background="{DynamicResource NeoSurfaceLow}"><Image Source="{Binding CurrentArtwork}" Stretch="UniformToFill"/></Border>
-                    <StackPanel Grid.Column="1" Margin="10,0" VerticalAlignment="Center"><TextBlock Text="{Binding Playback.Current.Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Playback.Current.Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="12"/></StackPanel>
-                    <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="⏮" Command="{Binding PreviousCommand}"/>
-                    <Button Grid.Column="3" Style="{StaticResource AccentButton}" Width="46" Height="42" Content="{Binding PlayPauseGlyph}" Command="{Binding TogglePlayCommand}"/>
-                    <Button Grid.Column="4" Style="{StaticResource IconButton}" Content="⏭" Command="{Binding NextCommand}"/>
-                </Grid>
-            </Border>
+      <Grid Visibility="{Binding IsSearch, Converter={StaticResource BoolToVisibility}}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" FontSize="18" Margin="12" />
+        <ListBox Grid.Row="1" ItemsSource="{Binding SearchResults}" MouseDoubleClick="SongList_DoubleClick">
+          <ListBox.ItemTemplate><DataTemplate DataType="{x:Type models:Song}"><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+        </ListBox>
+      </Grid>
 
-            <!-- BOTTOM NAV -->
-            <Border Grid.Row="3" Background="{DynamicResource NeoSurface}" BorderBrush="{DynamicResource NeoOutline}" BorderThickness="0,1,0,0">
-                <Grid Margin="12,6"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions>
-                    <Button Grid.Column="0" Command="{Binding HomeCommand}"><StackPanel><TextBlock Text="⌂" FontSize="20" HorizontalAlignment="Center"/><TextBlock Text="{DynamicResource StrHome}" FontSize="11" HorizontalAlignment="Center"/></StackPanel></Button>
-                    <Button Grid.Column="1" Command="{Binding SearchCommand}"><StackPanel><TextBlock Text="⌕" FontSize="20" HorizontalAlignment="Center"/><TextBlock Text="{DynamicResource StrSearch}" FontSize="11" HorizontalAlignment="Center"/></StackPanel></Button>
-                    <Button Grid.Column="2" Command="{Binding LibraryCommand}"><StackPanel><TextBlock Text="♫" FontSize="20" HorizontalAlignment="Center"/><TextBlock Text="{DynamicResource StrLibrary}" FontSize="11" HorizontalAlignment="Center"/></StackPanel></Button>
-                    <Button Grid.Column="3" Click="Create_Click"><StackPanel><TextBlock Text="＋" FontSize="20" HorizontalAlignment="Center"/><TextBlock Text="{DynamicResource StrCreate}" FontSize="11" HorizontalAlignment="Center"/></StackPanel></Button>
-                </Grid>
-            </Border>
-        </Grid>
+      <Grid Visibility="{Binding IsLibrary, Converter={StaticResource BoolToVisibility}}">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <DockPanel Margin="12">
+          <TextBlock Text="{DynamicResource Library}" FontSize="30" FontWeight="SemiBold" DockPanel.Dock="Left"/>
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="{DynamicResource AddFolder}" Command="{Binding AddSourceCommand}"/><Button Content="{DynamicResource Rescan}" Command="{Binding ScanCommand}"/></StackPanel>
+        </DockPanel>
+        <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource NeoForeground}">
+          <TabItem Header="Songs"><ListBox ItemsSource="{Binding Songs}" MouseDoubleClick="SongList_DoubleClick"><ListBox.ItemTemplate><DataTemplate><DockPanel><Button DockPanel.Dock="Right" Content="♥" Command="{Binding DataContext.ToggleFavoriteCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="  ·  "/><TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox></TabItem>
+          <TabItem Header="Playlists"><StackPanel><Button Content="+ New playlist" Command="{Binding CreatePlaylistCommand}" HorizontalAlignment="Left"/><ListBox ItemsSource="{Binding Playlists}" DisplayMemberPath="Name"/></StackPanel></TabItem>
+        </TabControl>
+      </Grid>
 
-        <!-- NOW PLAYING FULLSCREEN OVERLAY -->
-        <Grid Panel.ZIndex="20" Background="{DynamicResource NeoBackground}" Visibility="{Binding IsNowPlayingOpen, Converter={StaticResource BoolToVisibility}}">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <Grid.RowDefinitions><RowDefinition Height="54"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Grid Grid.ColumnSpan="2" Margin="14,6"><Button HorizontalAlignment="Left" Style="{StaticResource IconButton}" Content="⌄" Command="{Binding CloseNowPlayingCommand}"/><TextBlock Text="{DynamicResource StrNowPlaying}" HorizontalAlignment="Center" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{DynamicResource NeoMuted}"/></Grid>
-            <Grid Grid.Row="1" Margin="26,6,26,24">
-                <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                <Grid x:Name="PlayerGestureArea" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620" MaxHeight="500" PreviewMouseLeftButtonDown="PlayerGestureArea_Down" PreviewMouseLeftButtonUp="PlayerGestureArea_Up">
-                    <Border CornerRadius="28" ClipToBounds="True" Background="{DynamicResource NeoSurfaceLow}" Width="440" Height="440">
-                        <Grid>
-                            <Image Source="{Binding CurrentArtwork}" Stretch="UniformToFill" Visibility="{Binding Theme.CanvasEnabled, Converter={StaticResource InverseBoolToVisibility}}"/>
-                            <MediaElement x:Name="CanvasMedia" Source="{Binding Theme.CanvasPath}" Stretch="{Binding Theme.CanvasFit, Converter={StaticResource CanvasFitToStretch}}" LoadedBehavior="Manual" UnloadedBehavior="Manual" Visibility="{Binding Theme.CanvasEnabled, Converter={StaticResource BoolToVisibility}}" MediaOpened="CanvasMedia_MediaOpened"/>
-                        </Grid>
-                    </Border>
-                    <Ellipse Fill="{DynamicResource NeoAccent}" Width="330" Height="330" IsHitTestVisible="False" Opacity="{Binding VisualPulse}" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter=pulse}"/>
-                    <ItemsControl ItemsSource="{Binding SpectrumBars}" VerticalAlignment="Bottom" Height="130" Margin="36" IsHitTestVisible="False" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter='spectrum,bars'}">
-                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate><DataTemplate><Border VerticalAlignment="Bottom" Margin="1" CornerRadius="2" Background="{DynamicResource NeoAccent}" Height="{Binding Converter={StaticResource SpectrumHeight}, ConverterParameter=110}" Opacity="0.72"/></DataTemplate></ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </Grid>
-                <StackPanel Grid.Row="1" HorizontalAlignment="Center" Width="620" Margin="0,12,0,0">
-                    <TextBlock Text="{Binding Playback.Current.Title}" FontSize="26" FontWeight="Bold" HorizontalAlignment="Center" TextAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <TextBlock Text="{Binding Playback.Current.Artist}" FontSize="15" Foreground="{DynamicResource NeoMuted}" HorizontalAlignment="Center"/>
-                    <ItemsControl ItemsSource="{Binding WaveformPoints}" Height="42" Margin="0,12,0,2" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter=waveform}">
-                        <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate><DataTemplate><Border VerticalAlignment="Center" Width="1" Background="{DynamicResource NeoMuted}" Height="{Binding Converter={StaticResource SpectrumHeight}, ConverterParameter=38}"/></DataTemplate></ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <Slider x:Name="SeekSlider" Minimum="0" Maximum="{Binding SeekMaximum}" Value="{Binding SeekValue, Mode=TwoWay}" PreviewMouseLeftButtonDown="SeekSlider_Down" PreviewMouseLeftButtonUp="SeekSlider_Up"/>
-                    <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><TextBlock Text="{Binding PositionText}" Foreground="{DynamicResource NeoMuted}"/><TextBlock Grid.Column="1" Text="{Binding DurationText}" Foreground="{DynamicResource NeoMuted}" HorizontalAlignment="Right"/></Grid>
-                </StackPanel>
-                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8">
-                    <Button Style="{StaticResource IconButton}" Content="{Binding ShuffleGlyph}" Command="{Binding ShuffleCommand}"/>
-                    <Button Style="{StaticResource IconButton}" Content="⏮" FontSize="22" Command="{Binding PreviousCommand}"/>
-                    <Button Style="{StaticResource AccentButton}" Width="70" Height="58" FontSize="25" Content="{Binding PlayPauseGlyph}" Command="{Binding TogglePlayCommand}"/>
-                    <Button Style="{StaticResource IconButton}" Content="⏭" FontSize="22" Command="{Binding NextCommand}"/>
-                    <Button Style="{StaticResource IconButton}" Content="↻" ToolTip="Repeat" Command="{Binding RepeatCommand}"/>
-                </StackPanel>
-                <Grid Grid.Row="3" Width="620" Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal"><TextBlock Text="Speed" VerticalAlignment="Center" Margin="4"/><Slider x:Name="SpeedSlider" Width="210" Minimum="0.25" Maximum="3" Value="{Binding Playback.Speed}" ValueChanged="SpeedSlider_ValueChanged"/></StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right"><TextBlock Text="Volume" VerticalAlignment="Center" Margin="4"/><Slider x:Name="VolumeSlider" Width="210" Minimum="0" Maximum="1" Value="{Binding Playback.Volume}" ValueChanged="VolumeSlider_ValueChanged"/></StackPanel>
-                </Grid>
-                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Center">
-                    <Button Content="{DynamicResource StrQueue}" Command="{Binding OpenQueueCommand}"/><Button Content="{DynamicResource StrLyrics}" Command="{Binding OpenLyricsCommand}"/><Button Content="{DynamicResource StrEqualizer}" Command="{Binding OpenEqCommand}"/><Button Content="{DynamicResource StrTrackPlus}" Command="{Binding OpenTrackPlusCommand}"/>
-                    <Button Content="♡" Command="{Binding ToggleFavoriteCommand}" CommandParameter="{Binding Playback.Current}"/>
-                </StackPanel>
-            </Grid>
-
-            <!-- Side panel -->
-            <Border Grid.Column="1" Grid.Row="1" Width="430" Margin="0,8,12,14" Background="{DynamicResource NeoSurface}" CornerRadius="24" BorderBrush="{DynamicResource NeoOutline}" BorderThickness="1">
-                <Border.Visibility><MultiBinding Converter="{StaticResource BoolOrToVisibility}"><Binding Path="IsQueueOpen"/><Binding Path="IsLyricsOpen"/><Binding Path="IsEqOpen"/><Binding Path="IsTrackPlusOpen"/></MultiBinding></Border.Visibility>
-                <Grid Margin="16">
-                    <Button HorizontalAlignment="Right" VerticalAlignment="Top" Panel.ZIndex="3" Style="{StaticResource IconButton}" Content="×" Command="{Binding ClosePanelsCommand}"/>
-                    <!-- queue -->
-                    <Grid Visibility="{Binding IsQueueOpen, Converter={StaticResource BoolToVisibility}}"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions><TextBlock Text="{DynamicResource StrQueue}" FontSize="22" FontWeight="Bold" Margin="4,4,44,14"/><ListBox x:Name="QueueList" Grid.Row="1" ItemsSource="{Binding Playback.Queue}" ItemTemplate="{StaticResource SongRowTemplate}" AllowDrop="True" PreviewMouseLeftButtonDown="QueueList_PreviewMouseLeftButtonDown" PreviewMouseMove="QueueList_PreviewMouseMove" Drop="QueueList_Drop"/></Grid>
-                    <!-- lyrics -->
-                    <Grid Visibility="{Binding IsLyricsOpen, Converter={StaticResource BoolToVisibility}}"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><TextBlock Text="{DynamicResource StrLyrics}" FontSize="22" FontWeight="Bold" Margin="4,4,44,14"/>
-                        <ListBox x:Name="LyricsList" Grid.Row="1" ItemsSource="{Binding LyricDraftLines}" SelectedItem="{Binding SelectedLyricDraft}" Background="Transparent">
-                            <ListBox.ItemTemplate><DataTemplate><Border Padding="8" CornerRadius="10"><Border.Style><Style TargetType="Border"><Setter Property="Background" Value="Transparent"/><Style.Triggers><DataTrigger Binding="{Binding IsActive}" Value="True"><Setter Property="Background" Value="{DynamicResource NeoAccentContainer}"/></DataTrigger></Style.Triggers></Style></Border.Style><TextBlock Text="{Binding Text}" FontSize="{Binding DataContext.Settings.LyricsFontSize, RelativeSource={RelativeSource AncestorType=Window}}" TextWrapping="Wrap"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Foreground" Value="{DynamicResource NeoMuted}"/><Style.Triggers><DataTrigger Binding="{Binding IsActive}" Value="True"><Setter Property="Foreground" Value="{DynamicResource NeoText}"/><Setter Property="FontWeight" Value="Bold"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Border></DataTemplate></ListBox.ItemTemplate>
-                        </ListBox>
-                        <StackPanel Grid.Row="2" MaxHeight="130" Margin="4,6">
-                            <TextBlock Text="{Binding CurrentLyrics.Translation}" TextWrapping="Wrap" Foreground="{DynamicResource NeoMuted}" Visibility="{Binding Settings.TranslationEnabled, Converter={StaticResource BoolToVisibility}}"/>
-                            <TextBlock Text="{Binding CurrentLyrics.Romanization}" TextWrapping="Wrap" FontStyle="Italic" Foreground="{DynamicResource NeoMuted}" Visibility="{Binding Settings.RomanizationEnabled, Converter={StaticResource BoolToVisibility}}"/>
-                        </StackPanel>
-                        <WrapPanel Grid.Row="3"><Button Content="{DynamicResource StrImport}" Command="{Binding ImportLyricsCommand}"/><Button Content="{DynamicResource StrEditTimestamp}" Command="{Binding EditLyricsCommand}"/><Button Content="{DynamicResource StrTranscribe}" Command="{Binding TranscribeCommand}"/><Button Content="{DynamicResource StrAlign}" Command="{Binding ForceAlignCommand}"/></WrapPanel>
-                    </Grid>
-                    <!-- EQ -->
-                    <ScrollViewer Visibility="{Binding IsEqOpen, Converter={StaticResource BoolToVisibility}}" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="2,2,2,12"><TextBlock Text="{DynamicResource StrEqualizer}" FontSize="22" FontWeight="Bold" Margin="4,4,44,12"/><ComboBox SelectedValue="{Binding EqPreset}" SelectedValuePath="Content" SelectionChanged="EqPreset_SelectionChanged"><ComboBoxItem Content="Normal"/><ComboBoxItem Content="Bass Boost"/><ComboBoxItem Content="Vocal"/><ComboBoxItem Content="Rock"/><ComboBoxItem Content="Electronic"/><ComboBoxItem Content="Classical"/><ComboBoxItem Content="Treble"/><ComboBoxItem Content="Warm"/></ComboBox>
-                            <ItemsControl ItemsSource="{Binding EqBands}"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="0,4"><Grid.ColumnDefinitions><ColumnDefinition Width="42"/><ColumnDefinition Width="*"/><ColumnDefinition Width="44"/></Grid.ColumnDefinitions><TextBlock Text="{Binding Label}" VerticalAlignment="Center"/><Slider Grid.Column="1" Minimum="-12" Maximum="12" Value="{Binding Gain, Mode=TwoWay}"/><TextBlock Grid.Column="2" Text="{Binding Gain, StringFormat={}{0:0.0}}" VerticalAlignment="Center" HorizontalAlignment="Right"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                            <TextBlock Text="Bass"/><Slider Minimum="0" Maximum="1" Value="{Binding EqBass, Mode=TwoWay}"/><TextBlock Text="Stereo virtualizer"/><Slider Minimum="0" Maximum="1" Value="{Binding EqVirtualizer, Mode=TwoWay}"/><TextBlock Text="Per-track loudness (dB)"/><Slider Minimum="-12" Maximum="12" Value="{Binding EqLoudness, Mode=TwoWay}"/>
-                            <Button Style="{StaticResource AccentButton}" Content="{DynamicResource StrApplySave}" Command="{Binding ApplyEqCommand}"/>
-                        </StackPanel>
-                    </ScrollViewer>
-                    <!-- Track+ -->
-                    <ScrollViewer Visibility="{Binding IsTrackPlusOpen, Converter={StaticResource BoolToVisibility}}" VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="2,2,2,12"><TextBlock Text="{DynamicResource StrTrackPlus}" FontSize="22" FontWeight="Bold" Margin="4,4,44,12"/>
-                            <TextBlock Text="Artwork" FontWeight="SemiBold"/><Button Content="Choose custom artwork" Command="{Binding PickArtworkCommand}"/>
-                            <Separator Margin="0,10"/><TextBlock Text="{DynamicResource StrCanvasVideo}" FontWeight="SemiBold"/><CheckBox Content="{DynamicResource StrEnableCanvas}" IsChecked="{Binding TrackPlus.CanvasEnabled}"/><TextBlock Text="{Binding TrackPlus.CanvasPath}" Foreground="{DynamicResource NeoMuted}" TextTrimming="CharacterEllipsis"/><Button Content="{DynamicResource StrChooseVideo}" Command="{Binding PickCanvasCommand}"/><ComboBox ItemsSource="{Binding CanvasFits}" SelectedItem="{Binding TrackPlus.CanvasFit}"/><TextBlock Text="Canvas speed"/><Slider Minimum="0.25" Maximum="3" Value="{Binding TrackPlus.CanvasPlaybackSpeed}"/><TextBlock Text="Loop start (ms)"/><TextBox Text="{Binding TrackPlus.CanvasStartMs}"/><TextBlock Text="Loop end (ms, 0 = media end)"/><TextBox Text="{Binding TrackPlus.CanvasEndMs}"/>
-                            <Separator Margin="0,10"/><TextBlock Text="{DynamicResource StrTrackWallpaper}" FontWeight="SemiBold"/><TextBlock Text="{Binding TrackPlus.BackgroundImagePath}" Foreground="{DynamicResource NeoMuted}" TextTrimming="CharacterEllipsis"/><Button Content="{DynamicResource StrChooseWallpaper}" Command="{Binding PickBackgroundCommand}"/><TextBlock Text="Background mode"/><ComboBox ItemsSource="{Binding BackgroundModes}" SelectedItem="{Binding TrackPlus.BackgroundMode}"/><TextBlock Text="Opacity"/><Slider Minimum="0" Maximum="0.85" Value="{Binding TrackPlus.BackgroundOpacity}"/><TextBlock Text="Blur"/><Slider Minimum="0" Maximum="48" Value="{Binding TrackPlus.BackgroundBlurDp}"/>
-                            <Separator Margin="0,10"/><TextBlock Text="Per-track colors (ARGB hex, e.g. #FFFF7A1A)" FontWeight="SemiBold"/><TextBox Text="{Binding TrackPlus.AccentHex}" Margin="0,3"/><TextBox Text="{Binding TrackPlus.BackgroundHex}" Margin="0,3"/><TextBox Text="{Binding TrackPlus.SecondaryHex}" Margin="0,3"/>
-                            <TextBlock Text="{DynamicResource StrVisualizer}"/><ComboBox ItemsSource="{Binding VisualizerModes}" SelectedItem="{Binding TrackPlus.VisualizerMode}"/><TextBlock Text="Sensitivity"/><Slider Minimum="0.1" Maximum="4" Value="{Binding TrackPlus.VisualizerSensitivity}"/><TextBlock Text="Animation intensity"/><Slider Minimum="0" Maximum="2" Value="{Binding TrackPlus.AnimationIntensity}"/>
-                            <Button Style="{StaticResource AccentButton}" Content="{DynamicResource StrSaveTrackPlus}" Command="{Binding SaveTrackPlusCommand}"/>
-                        </StackPanel>
-                    </ScrollViewer>
-                </Grid>
-            </Border>
-        </Grid>
-
-        <!-- SETTINGS OVERLAY -->
-        <Grid Panel.ZIndex="30" Background="{DynamicResource NeoBackground}" Visibility="{Binding IsSettingsOpen, Converter={StaticResource BoolToVisibility}}">
-            <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Grid Margin="14,5"><Button HorizontalAlignment="Left" Style="{StaticResource IconButton}" Content="←" Command="{Binding CloseSettingsCommand}"/><TextBlock Text="{DynamicResource StrSettings}" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" FontWeight="Bold"/></Grid>
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"><StackPanel Width="760" HorizontalAlignment="Center" Margin="20,4,20,40">
-                <TextBlock Text="{DynamicResource StrAppearance}" FontSize="22" FontWeight="Bold" Margin="0,12,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel>
-                    <TextBlock Text="{DynamicResource StrTheme}"/><ComboBox ItemsSource="{Binding ThemeModes}" SelectedItem="{Binding Settings.ThemeMode}"/>
-                    <TextBlock Text="Accent"/><ComboBox ItemsSource="{Binding Accents}" SelectedItem="{Binding Settings.Accent}"/><Button Content="Choose custom accent" Command="{Binding PickCustomAccentCommand}"/>
-                    <CheckBox Content="Dynamic accent from artwork" IsChecked="{Binding Settings.DynamicArtwork}"/><CheckBox Content="Reduce motion" IsChecked="{Binding Settings.ReduceMotion}"/>
-                    <TextBlock Text="{DynamicResource StrLanguage}"/><ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding Settings.Language}"/>
-                </StackPanel></Border>
-
-                <TextBlock Text="{DynamicResource StrPlayback}" FontSize="22" FontWeight="Bold" Margin="0,18,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel>
-                    <CheckBox Content="Remember queue" IsChecked="{Binding Settings.RememberQueue}"/><CheckBox Content="Resume last song" IsChecked="{Binding Settings.ResumeLastSong}"/><CheckBox Content="Gapless playback" IsChecked="{Binding Settings.GaplessEnabled}"/><CheckBox Content="{DynamicResource StrAutoMix}" IsChecked="{Binding Settings.AutomixEnabled}"/><CheckBox Content="Advanced AutoMix" IsChecked="{Binding Settings.AdvancedAutomixEnabled}"/>
-                    <TextBlock Text="Crossfade (ms)"/><Slider Minimum="0" Maximum="12000" TickFrequency="500" IsSnapToTickEnabled="True" Value="{Binding Settings.CrossfadeMs}"/>
-                    <TextBlock Text="{DynamicResource StrDefaultSpeed}"/><Slider Minimum="0.25" Maximum="3" TickFrequency="0.05" Value="{Binding Settings.DefaultSpeed}"/>
-                    <CheckBox Content="{DynamicResource StrNormalization}" IsChecked="{Binding Settings.LoudnessNormalization}"/><TextBlock Text="Normalization mode"/><ComboBox ItemsSource="{Binding NormalizationModes}" SelectedItem="{Binding Settings.NormalizationMode}"/><TextBlock Text="Target LUFS"/><Slider Minimum="-23" Maximum="-8" TickFrequency="1" Value="{Binding Settings.NormalizationTargetLufs}"/>
-                    <TextBlock Text="Sleep timer" Margin="0,10,0,2"/><WrapPanel><Button Content="15 min" Command="{Binding Sleep15Command}"/><Button Content="30 min" Command="{Binding Sleep30Command}"/><Button Content="60 min" Command="{Binding Sleep60Command}"/><Button Content="Cancel" Command="{Binding CancelSleepCommand}"/></WrapPanel>
-                </StackPanel></Border>
-
-                <TextBlock Text="{DynamicResource StrLyrics}" FontSize="22" FontWeight="Bold" Margin="0,18,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel><TextBlock Text="Mode"/><ComboBox ItemsSource="{Binding LyricsModes}" SelectedItem="{Binding Settings.LyricsMode}"/><TextBlock Text="{DynamicResource StrProviderEndpoint}" Margin="0,8,0,2"/><TextBox Text="{Binding Settings.LyricsProviderEndpoint, UpdateSourceTrigger=LostFocus}" ToolTip="JSON endpoint may use {title}, {artist}, {album}"/><CheckBox Content="{DynamicResource StrTranslation}" IsChecked="{Binding Settings.TranslationEnabled}"/><CheckBox Content="{DynamicResource StrRomanization}" IsChecked="{Binding Settings.RomanizationEnabled}"/><CheckBox Content="{DynamicResource StrAutoScroll}" IsChecked="{Binding Settings.LyricsAutoScroll}"/><TextBlock Text="Font size"/><Slider Minimum="12" Maximum="42" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding Settings.LyricsFontSize}"/><TextBlock Text="Offline speech model" Margin="0,8,0,2"/><ComboBox ItemsSource="{Binding SpeechModels}" DisplayMemberPath="DisplayName" SelectedValuePath="Id" SelectedValue="{Binding SelectedSpeechModelId, Mode=TwoWay}"/><Button Content="{DynamicResource StrImportModel}" Command="{Binding ImportSpeechModelCommand}"/></StackPanel></Border>
-
-                <TextBlock Text="Library &amp; storage" FontSize="22" FontWeight="Bold" Margin="0,18,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel><TextBlock Text="Minimum track duration (ms)"/><Slider Minimum="0" Maximum="60000" TickFrequency="1000" Value="{Binding Settings.MinDurationMs}"/><WrapPanel><Button Content="Add source folder" Command="{Binding AddMusicFolderCommand}"/><Button Content="{DynamicResource StrExcludeFolder}" Command="{Binding ExcludeFolderCommand}"/><Button Content="{DynamicResource StrRescan}" Command="{Binding RescanCommand}"/><Button Content="{DynamicResource StrAnalyzeLibrary}" Command="{Binding AnalyzeLibraryCommand}"/></WrapPanel>
-                    <TextBlock Text="Included source folders" FontWeight="SemiBold" Margin="0,10,0,3"/><ItemsControl ItemsSource="{Binding Settings.IncludedFolders}"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/><Button Grid.Column="1" Content="Remove" Command="{Binding DataContext.RemoveIncludedFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl>
-                    <TextBlock Text="Excluded folders" FontWeight="SemiBold" Margin="0,10,0,3"/><ItemsControl ItemsSource="{Binding Settings.ExcludedFolders}"><ItemsControl.ItemTemplate><DataTemplate><Grid Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/><Button Grid.Column="1" Content="Remove" Command="{Binding DataContext.RemoveExcludedFolderCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/></Grid></DataTemplate></ItemsControl.ItemTemplate></ItemsControl><ProgressBar Height="8" Minimum="0" Maximum="{Binding AnalysisTotal}" Value="{Binding AnalysisCurrent}" Margin="4,10"/><TextBlock Text="{Binding AnalysisTrack}" Foreground="{DynamicResource NeoMuted}"/><TextBlock Text="Cache" Margin="0,12,0,0"/><TextBlock Text="{Binding CacheSizeText}" Foreground="{DynamicResource NeoMuted}"/><Button Content="Clear regeneratable cache" Command="{Binding ClearCacheCommand}"/></StackPanel></Border>
-
-                <TextBlock Text="Offline Pro" FontSize="22" FontWeight="Bold" Margin="0,18,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel><CheckBox Content="Strict offline mode" IsChecked="{Binding Settings.StrictOfflineMode}"/><CheckBox Content="Offline backup set" IsChecked="{Binding Settings.OfflineBackupEnabled}"/><CheckBox Content="Auto refresh offline set" IsChecked="{Binding Settings.OfflineBackupAutoRefresh}"/><TextBlock Text="Offline set limit"/><Slider Minimum="20" Maximum="500" TickFrequency="10" Value="{Binding Settings.OfflineBackupLimit}"/><Button Content="Refresh offline set now" Command="{Binding RefreshOfflineBackupCommand}"/></StackPanel></Border>
-
-                <TextBlock Text="Backup &amp; Windows" FontSize="22" FontWeight="Bold" Margin="0,18,0,6"/>
-                <Border Background="{DynamicResource NeoSurface}" CornerRadius="20" Padding="18"><StackPanel><WrapPanel><Button Content="Create full NEO backup" Command="{Binding CreateBackupCommand}"/><Button Content="Restore backup" Command="{Binding RestoreBackupCommand}"/></WrapPanel><CheckBox Content="Minimize to tray" IsChecked="{Binding Settings.MinimizeToTray}"/><Button Content="Open compact player" Command="{Binding OpenCompactPlayerCommand}"/><CheckBox Content="Start with Windows" IsChecked="{Binding Settings.StartWithWindows}"/><TextBlock Text="Media keys, Windows media controls, headset buttons, tray controls and output-device changes are integrated locally." Foreground="{DynamicResource NeoMuted}" TextWrapping="Wrap" Margin="0,8"/></StackPanel></Border>
-            </StackPanel></ScrollViewer>
-        </Grid>
-
-        <!-- COLLECTION DETAIL -->
-        <Grid Panel.ZIndex="35" Background="{DynamicResource NeoBackground}" Visibility="{Binding IsCollectionOpen, Converter={StaticResource BoolToVisibility}}">
-            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-            <Grid Margin="18,12"><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Button Style="{StaticResource IconButton}" Content="←" Command="{Binding CloseCollectionCommand}"/><StackPanel Grid.Column="1" Margin="12,0"><TextBlock Text="{Binding CollectionDetail.Title}" FontSize="26" FontWeight="Bold"/><TextBlock Text="{Binding CollectionDetail.Subtitle}" Foreground="{DynamicResource NeoMuted}"/></StackPanel><StackPanel Grid.Column="2" Orientation="Horizontal"><Button Content="{DynamicResource StrManage}" Click="CurrentCollectionMore_Click"/><Button Style="{StaticResource AccentButton}" Content="{DynamicResource StrPlayAll}" Command="{Binding PlayCollectionCommand}"/></StackPanel></Grid>
-            <Grid Grid.Row="1" Margin="20,4,20,10"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/><ColumnDefinition Width="100"/><ColumnDefinition Width="150"/></Grid.ColumnDefinitions><TextBox Text="{Binding CollectionDetail.SearchText, UpdateSourceTrigger=PropertyChanged}" ToolTip="Search inside this collection"/><ComboBox Grid.Column="1" ItemsSource="{Binding CollectionSortModes}" SelectedItem="{Binding CollectionDetail.SortMode}"/><CheckBox Grid.Column="2" Content="{DynamicResource StrAscending}" IsChecked="{Binding CollectionDetail.Ascending}" VerticalAlignment="Center"/><ComboBox Grid.Column="3" ItemsSource="{Binding CollectionViewModes}" SelectedItem="{Binding CollectionDetail.ViewMode}"/></Grid>
-            <Grid Grid.Row="2">
-                <ListBox x:Name="CollectionList" Margin="14" ItemsSource="{Binding CollectionDetail.VisibleSongs}" ItemTemplate="{StaticResource SongRowTemplate}" AllowDrop="True" PreviewMouseLeftButtonDown="CollectionList_PreviewMouseLeftButtonDown" PreviewMouseMove="CollectionList_PreviewMouseMove" Drop="CollectionList_Drop" Visibility="{Binding CollectionDetail.ViewMode, Converter={StaticResource EnumToVisibility}, ConverterParameter=list}"/>
-                <ListBox Margin="14" ItemsSource="{Binding CollectionDetail.VisibleSongs}" ItemTemplate="{StaticResource SongTileTemplate}" ItemsPanel="{StaticResource WrapPanelTemplate}" Visibility="{Binding CollectionDetail.ViewMode, Converter={StaticResource EnumToVisibility}, ConverterParameter=grid}"/>
-            </Grid>
-        </Grid>
-
-        <!-- HIDDEN SONGS -->
-        <Grid Panel.ZIndex="36" Background="{DynamicResource NeoBackground}" Visibility="{Binding IsHiddenOpen, Converter={StaticResource BoolToVisibility}}">
-            <Grid.RowDefinitions><RowDefinition Height="58"/><RowDefinition Height="*"/></Grid.RowDefinitions><Grid Margin="14"><Button Style="{StaticResource IconButton}" HorizontalAlignment="Left" Content="←" Click="CloseHidden_Click"/><TextBlock Text="{DynamicResource StrHiddenSongs}" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
-            <ListBox Grid.Row="1" Margin="20" ItemsSource="{Binding HiddenSongs}"><ListBox.ItemTemplate><DataTemplate><Border Background="{DynamicResource NeoSurfaceLow}" CornerRadius="14" Padding="10" Margin="3"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="{Binding Title}" FontWeight="SemiBold"/><TextBlock Text="{Binding Artist}" Foreground="{DynamicResource NeoMuted}"/></StackPanel><Button Grid.Column="1" Content="Unhide" Command="{Binding DataContext.UnhideSongCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/></Grid></Border></DataTemplate></ListBox.ItemTemplate></ListBox>
-        </Grid>
-
-        <!-- LYRICS AUTHORING -->
-        <Grid Panel.ZIndex="40" Background="{DynamicResource NeoBackground}" Visibility="{Binding IsLyricsEditorOpen, Converter={StaticResource BoolToVisibility}}">
-            <Grid.RowDefinitions><RowDefinition Height="60"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions><Grid Margin="14"><Button Style="{StaticResource IconButton}" HorizontalAlignment="Left" Content="←" Click="CloseLyricsEditor_Click"/><TextBlock Text="Lyrics authoring" FontSize="22" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/></Grid>
-            <Grid Grid.Row="1" Margin="20"><Grid.ColumnDefinitions><ColumnDefinition Width="2*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><ListBox x:Name="LyricsEditorList" ItemsSource="{Binding LyricDraftLines}" SelectedItem="{Binding SelectedLyricDraft}"><ListBox.ItemTemplate><DataTemplate><Grid Margin="2"><Grid.ColumnDefinitions><ColumnDefinition Width="90"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><TextBlock Text="{Binding TimeText}" Foreground="{DynamicResource NeoAccent}" VerticalAlignment="Center"/><TextBox Grid.Column="1" Text="{Binding Text, UpdateSourceTrigger=PropertyChanged}"/></Grid></DataTemplate></ListBox.ItemTemplate></ListBox><StackPanel Grid.Column="1" Margin="18,0"><TextBlock Text="Translation" FontWeight="SemiBold"/><TextBox Text="{Binding LyricsTranslation}" Height="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/><TextBlock Text="Romanization" FontWeight="SemiBold" Margin="0,12,0,0"/><TextBox Text="{Binding LyricsRomanization}" Height="180" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/><TextBlock Text="Select a line and press Capture at the right playback moment. Capture automatically advances to the next line." Foreground="{DynamicResource NeoMuted}" TextWrapping="Wrap" Margin="0,14"/></StackPanel></Grid>
-            <Border Grid.Row="2" Background="{DynamicResource NeoSurface}" Padding="12"><StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><TextBlock Text="{Binding PositionText}" VerticalAlignment="Center" Margin="8"/><Button Content="Capture timestamp" Command="{Binding StampLyricCommand}"/><Button Content="Play/Pause" Command="{Binding TogglePlayCommand}"/><Button Style="{StaticResource AccentButton}" Content="Save synchronized LRC" Command="{Binding SaveLyricsCommand}"/></StackPanel></Border>
-        </Grid>
-
-        <!-- BUSY / STATUS -->
-        <Border Panel.ZIndex="60" HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,62,0,0" Background="{DynamicResource NeoSurfaceHigh}" CornerRadius="14" Padding="14,8" Visibility="{Binding Status, Converter={StaticResource NonEmptyToVisibility}}"><TextBlock Text="{Binding Status}"/></Border>
+      <Grid Visibility="{Binding IsSettings, Converter={StaticResource BoolToVisibility}}">
+        <ScrollViewer><StackPanel Margin="18" MaxWidth="760" HorizontalAlignment="Left">
+          <TextBlock Text="{DynamicResource Settings}" FontSize="30" FontWeight="SemiBold" Margin="0,0,0,20"/>
+          <TextBlock Text="Music sources" FontSize="18" FontWeight="SemiBold"/><ListBox ItemsSource="{Binding Sources}" MinHeight="70"/>
+          <StackPanel Orientation="Horizontal"><Button Content="{DynamicResource AddFolder}" Command="{Binding AddSourceCommand}"/><Button Content="{DynamicResource Rescan}" Command="{Binding ScanCommand}"/></StackPanel>
+          <ProgressBar Minimum="0" Maximum="100" Value="{Binding ScanProgress}" Height="6" Margin="4,8,4,20"/>
+          <TextBlock Text="Data" FontSize="18" FontWeight="SemiBold"/><StackPanel Orientation="Horizontal"><Button Content="{DynamicResource Backup}" Command="{Binding BackupCommand}"/><Button Content="{DynamicResource Restore}" Command="{Binding RestoreCommand}"/></StackPanel>
+          <TextBlock Text="Package design: Windows-native Media Foundation/WASAPI; no bundled FFmpeg or speech models." Foreground="{DynamicResource NeoMuted}" Margin="4,22" TextWrapping="Wrap"/>
+        </StackPanel></ScrollViewer>
+      </Grid>
     </Grid>
+
+    <Border Grid.Column="1" Grid.Row="1" Background="{DynamicResource NeoPanel}" CornerRadius="18" Margin="0,10,0,0" Padding="16">
+      <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="280"/><ColumnDefinition Width="*"/><ColumnDefinition Width="180"/></Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center"><TextBlock Text="{Binding NowTitle}" FontWeight="SemiBold" FontSize="15" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding NowArtist}" Foreground="{DynamicResource NeoMuted}" FontSize="12" TextTrimming="CharacterEllipsis"/></StackPanel>
+        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"><Button Content="⏮" Command="{Binding PreviousCommand}"/><Button Content="⏯" Command="{Binding PlayPauseCommand}" Background="{DynamicResource NeoAccent}"/><Button Content="⏭" Command="{Binding NextCommand}"/></StackPanel>
+          <Slider Minimum="0" Maximum="{Binding DurationSeconds}" Value="{Binding PositionSeconds}" PreviewMouseLeftButtonUp="SeekSlider_OnPreviewMouseLeftButtonUp" Margin="8,2"/>
+        </StackPanel>
+        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock Text="🔊" VerticalAlignment="Center"/><Slider Width="120" Minimum="0" Maximum="1" Value="{Binding Volume, Mode=TwoWay}"/></StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
 </Window>

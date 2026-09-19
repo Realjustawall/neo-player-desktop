@@ -1,9 +1,7 @@
-bin/
-obj/
+**/bin/
+**/obj/
 .vs/
-.idea/
+artifacts/
+TestResults/
 *.user
 *.suo
-*.cache
-artifacts/
-*.neobackup

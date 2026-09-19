@@ -1,370 +1,205 @@
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
-using NeoPlayer.Windows.Audio;
 using NeoPlayer.Windows.Data;
 using NeoPlayer.Windows.Models;
-using System.Collections.Specialized;
 
 namespace NeoPlayer.Windows.Services;
 
-public sealed class PlaybackEngine : IAsyncDisposable
+public sealed class PlaybackEngine : IDisposable
 {
-    readonly NeoDatabase db;
-    readonly SettingsService settings;
-    readonly AudioAnalysisService analysis;
-    readonly AutoMixPlanner planner;
-    readonly MixingSampleProvider mixer;
-    IWavePlayer? output;
-    readonly SemaphoreSlim gate = new(1, 1);
-    readonly System.Threading.Timer timer;
-    Deck? current, next;
-    int preparedNextIndex = -1;
-    TransitionPlan? preparedPlan;
-    long accumulatedListened;
-    bool transitioning;
-    CancellationTokenSource? transitionCts;
-    readonly Random random = new();
+    private readonly NeoDatabase _db;
+    private readonly SettingsService _settings;
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly List<Song> _queue = new();
+    private readonly System.Timers.Timer _timer;
+    private IWavePlayer? _output;
+    private MixingSampleProvider? _mixer;
+    private Deck? _current;
+    private Deck? _next;
+    private int _index = -1;
+    private bool _crossfading;
+    private bool _disposed;
 
-    public PlaybackState State { get; } = new();
     public event EventHandler? StateChanged;
-    public event Action<float[]>? Samples;
+    public event EventHandler<Song?>? TrackChanged;
+    public event EventHandler<TimeSpan>? PositionChanged;
 
-    public PlaybackEngine(NeoDatabase d, SettingsService s, AudioAnalysisService a)
+    public IReadOnlyList<Song> Queue => _queue;
+    public Song? CurrentSong => _index >= 0 && _index < _queue.Count ? _queue[_index] : null;
+    public bool IsPlaying => _output?.PlaybackState == PlaybackState.Playing;
+    public double Volume { get; private set; }
+    public bool Shuffle { get; set; }
+    public RepeatMode Repeat { get; set; }
+    public TimeSpan Position => _current?.Reader.CurrentTime ?? TimeSpan.Zero;
+    public TimeSpan Duration => _current?.Reader.TotalTime ?? TimeSpan.Zero;
+
+    public PlaybackEngine(NeoDatabase db, SettingsService settings)
     {
-        db = d; settings = s; analysis = a; planner = new(d);
-        mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(48000, 2)) { ReadFully = true };
-        timer = new(_ => Tick(), null, Timeout.Infinite, Timeout.Infinite);
-        State.Queue.CollectionChanged += QueueChanged;
+        _db = db; _settings = settings;
+        Volume = settings.Value.Volume; Shuffle = settings.Value.Shuffle; Repeat = settings.Value.Repeat;
+        _timer = new System.Timers.Timer(200); _timer.Elapsed += (_, _) => Tick(); _timer.AutoReset = true; _timer.Start();
     }
 
-    public async Task InitializeAsync()
+    public async Task SetQueueAndPlayAsync(IEnumerable<Song> songs, int startIndex = 0)
     {
-        EnsureOutput();
-        if (settings.Current.RememberQueue)
-        {
-            var ids = await db.LoadQueueAsync();
-            foreach (var id in ids) { var s = await db.GetSongAsync(id); if (s is not null) State.Queue.Add(s); }
-            var idx = await db.GetAppStateAsync("queueIndex");
-            if (int.TryParse(idx, out var i)) State.QueueIndex = Math.Clamp(i, -1, State.Queue.Count - 1);
-        }
-        State.Speed = settings.Current.DefaultSpeed;
-        if (settings.Current.ResumeLastSong && State.QueueIndex >= 0 && State.QueueIndex < State.Queue.Count)
-        {
-            var pos = await db.GetAppStateAsync("positionMs");
-            if (long.TryParse(pos, out var ms))
-            {
-                await gate.WaitAsync();
-                try { await StartCurrentLockedAsync(State.Queue[State.QueueIndex], ms / 1000d, false); }
-                finally { gate.Release(); }
-            }
-        }
-    }
-
-    public async Task PlayQueueAsync(IEnumerable<Song> songs, int index = 0)
-    {
-        await gate.WaitAsync();
+        await _gate.WaitAsync();
         try
         {
-            ClearDecks(); State.Queue.Clear();
-            foreach (var s in songs) State.Queue.Add(s);
-            if (State.Queue.Count == 0) return;
-            State.QueueIndex = Math.Clamp(index, 0, State.Queue.Count - 1);
-            await StartCurrentLockedAsync(State.Queue[State.QueueIndex], 0, true);
-            await PersistAsync();
+            StopDecks(); _queue.Clear(); _queue.AddRange(songs); _index = _queue.Count == 0 ? -1 : Math.Clamp(startIndex, 0, _queue.Count - 1);
+            if (_index >= 0) StartCurrent();
         }
-        finally { gate.Release(); }
-    }
-    public Task PlayAsync(Song song) => PlayQueueAsync([song]);
-
-    async Task StartCurrentLockedAsync(Song song, double seekSeconds, bool startOutput)
-    {
-        ClearDecks();
-        current = await CreateDeckAsync(song, seekSeconds, State.Speed);
-        current.Enabled = true; current.Volume.Volume = 1;
-        mixer.AddMixerInput(current.Gate);
-        State.Current = song; State.DurationMs = song.DurationMs; State.PositionMs = (long)(seekSeconds * 1000); State.Error = null;
-        EnsureOutput();
-        if (startOutput) { output!.Play(); State.IsPlaying = true; }
-        else State.IsPlaying = false;
-        timer.Change(120, 120);
-        await PrepareNextLockedAsync();
-        Raise();
+        finally { _gate.Release(); }
     }
 
-    async Task<Deck> CreateDeckAsync(Song song, double start, float speed)
+    public async Task PlaySongAsync(Song song, IEnumerable<Song>? context = null)
     {
-        var d = new Deck(song.Id, song.Path, start, speed);
-        d.Dsp.Samples += OnSamples;
-        var eq = await db.GetEqAsync(song.Id) ?? new EqProfile(song.Id, "Normal", 0, 0, 0, new float[10]);
-        var ng = await NormalizationGainAsync(song);
-        d.Dsp.Configure(eq.Bands, eq.Bass, eq.Virtualizer, eq.LoudnessDb, ng);
-        return d;
+        var queue = context?.ToList() ?? new List<Song> { song };
+        var index = Math.Max(0, queue.FindIndex(x => x.Id == song.Id));
+        await SetQueueAndPlayAsync(queue, index);
     }
 
-    async Task<float> NormalizationGainAsync(Song s)
+    public void Pause() { _output?.Pause(); StateChanged?.Invoke(this, EventArgs.Empty); }
+
+    public void PlayPause()
     {
-        if (!settings.Current.LoudnessNormalization) return 0;
-        var mode = settings.Current.NormalizationMode;
-        if (mode is "smart" or "replaygain")
-        {
-            var rg = await db.GetReplayGainAsync(s.Id);
-            if (rg?.PreferredGainDb is float g) return Math.Clamp(g, -18, 12);
-            if (mode == "replaygain") return 0;
-        }
-        var a = await db.GetAnalysisAsync(s.Id);
-        if (a is null && mode == "smart")
-        {
-            try { a = (await analysis.AnalyzeAsync(s)).Basic; } catch { }
-        }
-        if (a is null) return 0;
-        return Math.Clamp(settings.Current.NormalizationTargetLufs - a.IntegratedLufs, -18, 12);
+        if (_output is null && CurrentSong is not null) StartCurrent();
+        else if (_output?.PlaybackState == PlaybackState.Playing) _output.Pause();
+        else _output?.Play();
+        StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    async Task PrepareNextLockedAsync()
+    public async Task NextAsync() => await ChangeTrackAsync(GetNextIndex());
+    public async Task PreviousAsync() => await ChangeTrackAsync(_queue.Count == 0 ? -1 : Math.Max(0, _index - 1));
+
+    public void Seek(TimeSpan position)
     {
-        if (next is not null) { mixer.RemoveMixerInput(next.Gate); next.Dispose(); }
-        next = null; preparedNextIndex = -1; preparedPlan = null;
-        if (State.Queue.Count == 0 || State.QueueIndex < 0) return;
-        var ni = NextIndex(false);
-        if (ni < 0 || ni >= State.Queue.Count) return;
-        if (ni == State.QueueIndex && State.Repeat != RepeatMode.One) return;
-        preparedNextIndex = ni;
-        next = await CreateDeckAsync(State.Queue[ni], 0, State.Speed);
-        next.Enabled = false; next.Volume.Volume = 0;
-        mixer.AddMixerInput(next.Gate);
-        if (settings.Current.AutomixEnabled && settings.Current.AdvancedAutomixEnabled && State.Current is not null)
-        {
-            try { preparedPlan = await planner.PlanAsync(State.Current, State.Queue[ni], settings.Current.CrossfadeMs); } catch { preparedPlan = null; }
-        }
+        if (_current is null) return;
+        _current.Reader.CurrentTime = position < TimeSpan.Zero ? TimeSpan.Zero : position > _current.Reader.TotalTime ? _current.Reader.TotalTime : position;
+        PositionChanged?.Invoke(this, _current.Reader.CurrentTime);
     }
 
-    int NextIndex(bool userInitiated)
+    public void SetVolume(double value)
     {
-        if (State.Queue.Count == 0 || State.QueueIndex < 0) return -1;
-        if (!userInitiated && State.Repeat == RepeatMode.One) return State.QueueIndex;
-        if (State.Shuffle && State.Queue.Count > 1)
-        {
-            int i; do i = random.Next(State.Queue.Count); while (i == State.QueueIndex); return i;
-        }
-        var n = State.QueueIndex + 1;
-        if (n < State.Queue.Count) return n;
-        if (State.Repeat == RepeatMode.All) return 0;
-        return -1;
+        Volume = Math.Clamp(value, 0, 1); if (_current is not null) _current.Volume.Volume = (float)Volume; if (_next is not null && !_crossfading) _next.Volume.Volume = 0;
+        _settings.Value.Volume = Volume; _ = _settings.SaveAsync(); StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    void Tick()
+    public void SetEqBand(int band, float db) { _current?.Equalizer.SetBand(band, db); _next?.Equalizer.SetBand(band, db); }
+    public void SetBass(float db) { _current?.Equalizer.SetBass(db); _next?.Equalizer.SetBass(db); }
+    public void SetStereoWidth(float width) { _current?.Equalizer.SetStereoWidth(width); _next?.Equalizer.SetStereoWidth(width); }
+
+    private void EnsureOutput()
     {
-        if (current is null || State.Current is null) return;
-        State.PositionMs = Math.Min(State.DurationMs, (long)(current.Decoder.PositionSeconds * 1000));
-        if (State.IsPlaying) accumulatedListened += 120;
-        _ = PersistPositionOccasionallyAsync();
-        Raise();
-        if (!State.IsPlaying) return;
-        var remaining = State.DurationMs - State.PositionMs;
-        if (!transitioning && next is not null && preparedNextIndex >= 0)
-        {
-            long threshold = settings.Current.AutomixEnabled
-                ? Math.Max(1200, settings.Current.CrossfadeMs == 0 ? 6000 : settings.Current.CrossfadeMs)
-                : settings.Current.CrossfadeMs;
-            var atPlannedPoint = preparedPlan is not null && State.PositionMs >= preparedPlan.StartAtMs;
-            if (atPlannedPoint || (preparedPlan is null && threshold > 0 && remaining <= threshold) || (settings.Current.GaplessEnabled && threshold == 0 && remaining < 220)) _ = BeginTransitionAsync();
-        }
-        if (current.Decoder.Ended && !transitioning) _ = HandleEndedAsync();
+        if (_output is not null) return;
+        _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2)) { ReadFully = true };
+        try { _output = new WasapiOut(AudioClientShareMode.Shared, true, 100); }
+        catch { _output = new WaveOutEvent { DesiredLatency = 120 }; }
+        _output.Init(_mixer);
     }
 
-    long lastPersistTick;
-    async Task PersistPositionOccasionallyAsync()
+    private void StartCurrent()
     {
-        var now = Environment.TickCount64;
-        if (now - Interlocked.Read(ref lastPersistTick) < 2000) return;
-        Interlocked.Exchange(ref lastPersistTick, now);
-        if (settings.Current.ResumeLastSong) await db.SetAppStateAsync("positionMs", State.PositionMs.ToString());
+        var song = CurrentSong; if (song is null || !File.Exists(song.Path)) return;
+        EnsureOutput(); StopDecks();
+        _current = CreateDeck(song.Path); _current.Volume.Volume = (float)Volume; _mixer!.AddMixerInput(_current.Volume); _output!.Play();
+        _ = _db.RecordPlayedAsync(song.Id); TrackChanged?.Invoke(this, song); StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    async Task HandleEndedAsync()
+    private Deck CreateDeck(string path)
     {
-        if (State.Repeat == RepeatMode.One) { await SeekAsync(0); Resume(); return; }
-        var ni = NextIndex(false);
-        if (ni >= 0) await NextAsync(false);
-        else
-        {
-            Pause(); State.PositionMs = State.DurationMs;
-            if (State.Current is not null) await db.RecordListenAsync(State.Current.Id, accumulatedListened, true, false);
-            accumulatedListened = 0; Raise();
-        }
+        var reader = new MediaFoundationReader(path);
+        ISampleProvider source = reader.ToSampleProvider();
+        if (source.WaveFormat.Channels == 1) source = new MonoToStereoSampleProvider(source);
+        else if (source.WaveFormat.Channels != 2) throw new InvalidDataException($"Unsupported channel count: {source.WaveFormat.Channels}");
+        if (source.WaveFormat.SampleRate != 44100) source = new WdlResamplingSampleProvider(source, 44100);
+        var eq = new EqualizerSampleProvider(source); var vol = new VolumeSampleProvider(eq) { Volume = 0 };
+        return new Deck(reader, eq, vol);
     }
 
-    async Task BeginTransitionAsync()
+    private async Task ChangeTrackAsync(int nextIndex)
     {
-        if (transitioning || current is null || next is null || State.Current is null || preparedNextIndex < 0) return;
-        transitioning = true; transitionCts?.Cancel(); transitionCts = new(); var token = transitionCts.Token;
-        var targetIndex = preparedNextIndex; var targetSong = State.Queue[targetIndex];
+        await _gate.WaitAsync();
         try
         {
-            var p = settings.Current.AutomixEnabled && settings.Current.AdvancedAutomixEnabled
-                ? preparedPlan ?? await planner.PlanAsync(State.Current, targetSong, settings.Current.CrossfadeMs, token)
-                : new TransitionPlan(settings.Current.CrossfadeMs, Math.Max(0, State.DurationMs - settings.Current.CrossfadeMs), 1, 0, "crossfade");
-            var targetSpeed = Math.Clamp(State.Speed * p.NextSpeed, .25f, 3f);
-            if (p.NextSeekMs > 0 || Math.Abs(targetSpeed - State.Speed) > .001)
-            {
-                mixer.RemoveMixerInput(next.Gate); next.Dispose();
-                next = await CreateDeckAsync(targetSong, p.NextSeekMs / 1000d, targetSpeed);
-                next.Volume.Volume = 0; next.Enabled = false; mixer.AddMixerInput(next.Gate);
-            }
-            next.Enabled = true;
-            var dur = Math.Max(1, p.DurationMs);
-            var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (sw.ElapsedMilliseconds < dur && !token.IsCancellationRequested)
-            {
-                var t = Math.Clamp(sw.Elapsed.TotalMilliseconds / dur, 0, 1);
-                current.Volume.Volume = (float)Math.Cos(t * Math.PI / 2);
-                next.Volume.Volume = (float)Math.Sin(t * Math.PI / 2);
-                await Task.Delay(20, token);
-            }
-            if (!token.IsCancellationRequested) await PromoteNextAsync(targetIndex, targetSpeed);
+            if (nextIndex < 0 || nextIndex >= _queue.Count) { _output?.Stop(); StopDecks(); _index = -1; TrackChanged?.Invoke(this, null); return; }
+            _index = nextIndex; StartCurrent();
         }
-        catch (OperationCanceledException) { }
-        catch (Exception ex) { State.Error = ex.Message; Raise(); }
-        finally { transitioning = false; }
+        finally { _gate.Release(); }
     }
 
-    async Task PromoteNextAsync(int targetIndex, float transitionSpeed)
+    private int GetNextIndex()
     {
-        await gate.WaitAsync();
-        try
+        if (_queue.Count == 0) return -1;
+        if (Repeat == RepeatMode.One) return _index;
+        if (Shuffle && _queue.Count > 1)
         {
-            if (current is null || next is null || targetIndex < 0 || targetIndex >= State.Queue.Count) return;
-            var old = current; mixer.RemoveMixerInput(old.Gate); old.Dispose();
-            current = next; next = null; current.Volume.Volume = 1;
-            State.QueueIndex = targetIndex; State.Current = State.Queue[targetIndex]; State.DurationMs = State.Current.DurationMs; State.PositionMs = (long)(current.Decoder.PositionSeconds * 1000);
-            await db.RecordListenAsync(old.SongId, accumulatedListened, true, false); accumulatedListened = 0;
-            await PrepareNextLockedAsync(); await PersistAsync(); Raise();
-            if (Math.Abs(transitionSpeed - State.Speed) > .002f && current is not null) _ = RestoreBaseSpeedAsync(current, transitionSpeed, State.Speed);
+            var r = Random.Shared.Next(_queue.Count - 1); return r >= _index ? r + 1 : r;
         }
-        finally { gate.Release(); }
+        if (_index + 1 < _queue.Count) return _index + 1;
+        return Repeat == RepeatMode.All ? 0 : -1;
     }
 
-    async Task RestoreBaseSpeedAsync(Deck deck, float from, float to)
+    private void Tick()
+    {
+        var deck = _current; if (deck is null) return;
+        PositionChanged?.Invoke(this, deck.Reader.CurrentTime);
+        if (!IsPlaying) return;
+        var remaining = deck.Reader.TotalTime - deck.Reader.CurrentTime;
+        var cf = TimeSpan.FromSeconds(_settings.Value.CrossfadeEnabled ? _settings.Value.CrossfadeSeconds : 0);
+        if (!_crossfading && cf > TimeSpan.Zero && remaining <= cf && remaining > TimeSpan.Zero)
+        {
+            var ni = GetNextIndex(); if (ni >= 0 && ni != _index) BeginCrossfade(ni, cf);
+        }
+        else if (!_crossfading && remaining <= TimeSpan.FromMilliseconds(120)) _ = NextAsync();
+    }
+
+    private void BeginCrossfade(int nextIndex, TimeSpan duration)
     {
         try
         {
-            const int steps = 4;
-            for (var i = 1; i <= steps; i++)
+            var song = _queue[nextIndex]; if (!File.Exists(song.Path)) return;
+            _next = CreateDeck(song.Path); _mixer!.AddMixerInput(_next.Volume); _crossfading = true;
+            var started = DateTime.UtcNow;
+            _ = Task.Run(async () =>
             {
-                await Task.Delay(650);
-                await gate.WaitAsync();
+                while (!_disposed)
+                {
+                    var t = Math.Clamp((DateTime.UtcNow - started).TotalMilliseconds / duration.TotalMilliseconds, 0, 1);
+                    if (_current is not null) _current.Volume.Volume = (float)(Volume * (1 - t)); if (_next is not null) _next.Volume.Volume = (float)(Volume * t);
+                    if (t >= 1) break; await Task.Delay(25);
+                }
+                await _gate.WaitAsync();
                 try
                 {
-                    if (!ReferenceEquals(current, deck) || !State.IsPlaying) return;
-                    var speed = from + (to - from) * (i / (float)steps);
-                    var pos = deck.Decoder.PositionSeconds;
-                    deck.Decoder.Restart(pos, speed);
+                    if (_next is null) return;
+                    if (_current is not null) { _mixer?.RemoveMixerInput(_current.Volume); _current.Dispose(); }
+                    _current = _next; _next = null; _index = nextIndex; _crossfading = false;
+                    _ = _db.RecordPlayedAsync(song.Id); TrackChanged?.Invoke(this, song); StateChanged?.Invoke(this, EventArgs.Empty);
                 }
-                finally { gate.Release(); }
-            }
+                finally { _gate.Release(); }
+            });
         }
-        catch { }
+        catch { _next?.Dispose(); _next = null; _crossfading = false; }
     }
 
-    IWavePlayer CreateOutput()
+    private void StopDecks()
     {
-        var provider = new SampleToWaveProvider(mixer);
-        try
-        {
-            var o = new WasapiOut(NAudio.CoreAudioApi.AudioClientShareMode.Shared, 80);
-            o.Init(provider); o.Volume = (float)State.Volume; return o;
-        }
-        catch
-        {
-            var fallback = new WaveOutEvent { DesiredLatency = 120, NumberOfBuffers = 3 };
-            fallback.Init(provider); fallback.Volume = (float)State.Volume; return fallback;
-        }
-    }
-    void EnsureOutput() => output ??= CreateOutput();
-
-    public void TogglePlay() { if (State.IsPlaying) Pause(); else Resume(); }
-    public void Pause() { if (!State.IsPlaying) return; output?.Pause(); State.IsPlaying = false; Raise(); }
-    public void Resume() { EnsureOutput(); if (State.Current is null || State.IsPlaying) return; output!.Play(); State.IsPlaying = true; Raise(); }
-
-    public async Task ReinitializeOutputAsync()
-    {
-        await gate.WaitAsync();
-        try
-        {
-            var was = State.IsPlaying; try { output?.Stop(); output?.Dispose(); } catch { } output = null; EnsureOutput(); if (was) output!.Play();
-        }
-        finally { gate.Release(); }
+        if (_current is not null) { _mixer?.RemoveMixerInput(_current.Volume); _current.Dispose(); _current = null; }
+        if (_next is not null) { _mixer?.RemoveMixerInput(_next.Volume); _next.Dispose(); _next = null; }
+        _crossfading = false;
     }
 
-    public async Task SeekAsync(long ms)
+    public void Dispose()
     {
-        await gate.WaitAsync();
-        try
-        {
-            if (State.Current is null) return;
-            var playing = State.IsPlaying; await StartCurrentLockedAsync(State.Current, Math.Clamp(ms, 0, State.DurationMs) / 1000d, playing);
-            await PersistAsync();
-        }
-        finally { gate.Release(); }
-    }
-    public async Task SetSpeedAsync(float speed) { State.Speed = Math.Clamp(speed, .25f, 3f); await SeekAsync(State.PositionMs); }
-
-    public async Task NextAsync(bool user = true)
-    {
-        await gate.WaitAsync();
-        try
-        {
-            if (State.Queue.Count == 0) return;
-            var ni = NextIndex(user); if (ni < 0) return;
-            var old = State.Current; var skipped = old is not null && State.PositionMs < Math.Min(30000, State.DurationMs / 2);
-            if (old is not null) await db.RecordListenAsync(old.Id, accumulatedListened, false, skipped);
-            accumulatedListened = 0; State.QueueIndex = ni; await StartCurrentLockedAsync(State.Queue[ni], 0, true); await PersistAsync();
-        }
-        finally { gate.Release(); }
+        _disposed = true; _timer.Stop(); _timer.Dispose(); StopDecks(); _output?.Stop(); _output?.Dispose(); _gate.Dispose();
     }
 
-    public async Task PreviousAsync()
+    private sealed class Deck(MediaFoundationReader reader, EqualizerSampleProvider equalizer, VolumeSampleProvider volume) : IDisposable
     {
-        if (State.PositionMs > 5000) { await SeekAsync(0); return; }
-        await gate.WaitAsync();
-        try
-        {
-            if (State.Queue.Count == 0) return;
-            var i = Math.Max(0, State.QueueIndex - 1); State.QueueIndex = i; await StartCurrentLockedAsync(State.Queue[i], 0, true); await PersistAsync();
-        }
-        finally { gate.Release(); }
-    }
-
-    public void ToggleShuffle() { State.Shuffle = !State.Shuffle; _ = PrepareAfterModeChangeAsync(); Raise(); }
-    public void CycleRepeat() { State.Repeat = State.Repeat switch { RepeatMode.Off => RepeatMode.All, RepeatMode.All => RepeatMode.One, _ => RepeatMode.Off }; _ = PrepareAfterModeChangeAsync(); Raise(); }
-    async Task PrepareAfterModeChangeAsync() { await gate.WaitAsync(); try { if (current is not null) await PrepareNextLockedAsync(); } finally { gate.Release(); } }
-
-    public async Task PlayNextAsync(Song song) { var p = Math.Clamp(State.QueueIndex + 1, 0, State.Queue.Count); var existing = State.Queue.FirstOrDefault(x => x.Id == song.Id); if (existing is not null) State.Queue.Remove(existing); State.Queue.Insert(p, song); await PersistAsync(); await PrepareAfterModeChangeAsync(); }
-    public async Task AddToQueueAsync(Song song) { if (!State.Queue.Any(x => x.Id == song.Id)) State.Queue.Add(song); await PersistAsync(); await PrepareAfterModeChangeAsync(); }
-    public async Task RemoveFromQueueAsync(Song song) { var i = State.Queue.IndexOf(song); if (i < 0) return; State.Queue.RemoveAt(i); if (i < State.QueueIndex) State.QueueIndex--; await PersistAsync(); await PrepareAfterModeChangeAsync(); }
-    public async Task MoveQueueAsync(int from, int to) { if (from < 0 || from >= State.Queue.Count || to < 0 || to >= State.Queue.Count || from == to) return; var s = State.Queue[from]; State.Queue.RemoveAt(from); State.Queue.Insert(to, s); if (State.QueueIndex == from) State.QueueIndex = to; else if (from < State.QueueIndex && to >= State.QueueIndex) State.QueueIndex--; else if (from > State.QueueIndex && to <= State.QueueIndex) State.QueueIndex++; await PersistAsync(); await PrepareAfterModeChangeAsync(); }
-    async void QueueChanged(object? s, NotifyCollectionChangedEventArgs e) { if (settings.Current.RememberQueue) await PersistAsync(); }
-    async Task PersistAsync() { if (!settings.Current.RememberQueue) return; await db.SaveQueueAsync(State.Queue.Select(x => x.Id)); await db.SetAppStateAsync("queueIndex", State.QueueIndex.ToString()); if (settings.Current.ResumeLastSong) await db.SetAppStateAsync("positionMs", State.PositionMs.ToString()); }
-
-    public async Task ApplyEqAsync(EqProfile e) { await db.SaveEqAsync(e); if (current?.SongId == e.SongId) { var ng = State.Current is null ? 0 : await NormalizationGainAsync(State.Current); current.Dsp.Configure(e.Bands, e.Bass, e.Virtualizer, e.LoudnessDb, ng); } }
-    public Task SetTrackVisualAsync(TrackVisualProfile v) => db.SaveTrackVisualAsync(v);
-    public void SetVolume(double v) { State.Volume = Math.Clamp(v, 0, 1); EnsureOutput(); output!.Volume = (float)State.Volume; Raise(); }
-    void OnSamples(float[] s) => Samples?.Invoke(s);
-    void Raise() => StateChanged?.Invoke(this, EventArgs.Empty);
-
-    void ClearDecks()
-    {
-        transitionCts?.Cancel(); preparedNextIndex = -1; preparedPlan = null;
-        if (current is not null) { mixer.RemoveMixerInput(current.Gate); current.Dispose(); }
-        if (next is not null) { mixer.RemoveMixerInput(next.Gate); next.Dispose(); }
-        current = next = null; transitioning = false;
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        timer.Dispose(); State.Queue.CollectionChanged -= QueueChanged;
-        await gate.WaitAsync();
-        try { ClearDecks(); output?.Stop(); output?.Dispose(); output = null; }
-        finally { gate.Release(); gate.Dispose(); }
+        public MediaFoundationReader Reader { get; } = reader;
+        public EqualizerSampleProvider Equalizer { get; } = equalizer;
+        public VolumeSampleProvider Volume { get; } = volume;
+        public void Dispose() => Reader.Dispose();
     }
 }
