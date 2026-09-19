@@ -10,6 +10,7 @@ public sealed class PlaybackEngine : IDisposable
 {
     private readonly NeoDatabase _db;
     private readonly SettingsService _settings;
+    private readonly AnalysisGainService _gain = new();
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<Song> _queue = new();
     private readonly System.Timers.Timer _timer;
@@ -17,6 +18,8 @@ public sealed class PlaybackEngine : IDisposable
     private MixingSampleProvider? _mixer;
     private Deck? _current;
     private Deck? _next;
+    private int _preparedIndex = -1;
+    private bool _nextInMixer;
     private int _index = -1;
     private bool _crossfading;
     private bool _disposed;
@@ -117,6 +120,7 @@ public sealed class PlaybackEngine : IDisposable
             if (fromIndex < 0 || fromIndex >= _queue.Count || _queue.Count < 2) return;
             var target = Math.Clamp(toIndex, 0, _queue.Count - 1);
             if (target == fromIndex) return;
+            DisposePreparedNext();
             var currentSongId = CurrentSong?.Id;
             var item = _queue[fromIndex];
             _queue.RemoveAt(fromIndex);
@@ -135,6 +139,7 @@ public sealed class PlaybackEngine : IDisposable
         {
             var removeIndex = _queue.FindIndex(x => x.Id == song.Id);
             if (removeIndex < 0) return;
+            DisposePreparedNext();
             var removingCurrent = removeIndex == _index;
             _queue.RemoveAt(removeIndex);
             if (_queue.Count == 0)
@@ -178,6 +183,7 @@ public sealed class PlaybackEngine : IDisposable
     public void Seek(TimeSpan position)
     {
         if (_current is null) return;
+        DisposePreparedNext();
         _current.Reader.CurrentTime = position < TimeSpan.Zero ? TimeSpan.Zero : position > _current.Reader.TotalTime ? _current.Reader.TotalTime : position;
         _settings.Value.PersistedPositionSeconds = _current.Reader.CurrentTime.TotalSeconds;
         PositionChanged?.Invoke(this, _current.Reader.CurrentTime);
@@ -197,6 +203,7 @@ public sealed class PlaybackEngine : IDisposable
     public void SetShuffle(bool value)
     {
         Shuffle = value;
+        DisposePreparedNext();
         _settings.Value.Shuffle = value;
         _ = _settings.SaveAsync();
         StateChanged?.Invoke(this, EventArgs.Empty);
@@ -205,7 +212,23 @@ public sealed class PlaybackEngine : IDisposable
     public void SetRepeat(RepeatMode value)
     {
         Repeat = value;
+        DisposePreparedNext();
         _settings.Value.Repeat = value;
+        _ = _settings.SaveAsync();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetNormalize(bool value)
+    {
+        _settings.Value.Normalize = value;
+        _ = _settings.SaveAsync();
+        StateChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetGapless(bool value)
+    {
+        _settings.Value.Gapless = value;
+        if (!value) DisposePreparedNext();
         _ = _settings.SaveAsync();
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
@@ -274,7 +297,7 @@ public sealed class PlaybackEngine : IDisposable
         StopDecks();
         var mixer = _mixer ?? throw new InvalidOperationException("Audio mixer was not initialized.");
         var output = _output ?? throw new InvalidOperationException("Audio output was not initialized.");
-        _current = CreateDeck(song.Path);
+        _current = CreateDeck(song);
         if (_resumePending && _settings.Value.PersistedPositionSeconds > 0)
         {
             var resume = TimeSpan.FromSeconds(_settings.Value.PersistedPositionSeconds);
@@ -290,9 +313,9 @@ public sealed class PlaybackEngine : IDisposable
         StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    private Deck CreateDeck(string path)
+    private Deck CreateDeck(Song song)
     {
-        var reader = new MediaFoundationReader(path);
+        var reader = new MediaFoundationReader(song.Path);
         ISampleProvider source = reader.ToSampleProvider();
         if (source.WaveFormat.Channels == 1) source = new MonoToStereoSampleProvider(source);
         else if (source.WaveFormat.Channels != 2) throw new InvalidDataException($"Unsupported channel count: {source.WaveFormat.Channels}");
@@ -301,6 +324,7 @@ public sealed class PlaybackEngine : IDisposable
         for (var i = 0; i < Math.Min(10, _settings.Value.EqualizerBands.Count); i++) eq.SetBand(i, _settings.Value.EqualizerBands[i]);
         eq.SetBass(_settings.Value.BassDb);
         eq.SetStereoWidth(_settings.Value.StereoWidth);
+        if (_settings.Value.Normalize) eq.SetPreampDb(_gain.GetGainDb(song.Id, _settings.Value.TargetLufs));
         var vol = new VolumeSampleProvider(eq) { Volume = 0 };
         return new Deck(reader, eq, vol);
     }
@@ -353,14 +377,63 @@ public sealed class PlaybackEngine : IDisposable
             _settings.Value.PersistedPositionSeconds = deck.Reader.CurrentTime.TotalSeconds;
         }
         if (!IsPlaying) return;
+
         var remaining = deck.Reader.TotalTime - deck.Reader.CurrentTime;
-        var cf = TimeSpan.FromSeconds(_settings.Value.CrossfadeEnabled ? _settings.Value.CrossfadeSeconds : 0);
-        if (!_crossfading && cf > TimeSpan.Zero && remaining <= cf && remaining > TimeSpan.Zero)
+        var crossfade = TimeSpan.FromSeconds(_settings.Value.CrossfadeEnabled ? _settings.Value.CrossfadeSeconds : 0);
+        if (!_crossfading && crossfade > TimeSpan.Zero && remaining <= crossfade && remaining > TimeSpan.Zero)
         {
-            var ni = GetNextIndex();
-            if (ni >= 0 && ni != _index) BeginCrossfade(ni, cf);
+            var next = _preparedIndex >= 0 ? _preparedIndex : GetNextIndex();
+            if (next >= 0 && next != _index) BeginCrossfade(next, crossfade);
+            return;
         }
-        else if (!_crossfading && remaining <= TimeSpan.FromMilliseconds(120)) _ = NextAsync();
+
+        if (!_crossfading && !_settings.Value.CrossfadeEnabled && _settings.Value.Gapless)
+        {
+            if (_preparedIndex < 0 && remaining <= TimeSpan.FromSeconds(2.5) && remaining > TimeSpan.FromMilliseconds(100))
+            {
+                var next = GetNextIndex();
+                if (next >= 0 && next != _index) PrepareNext(next);
+            }
+            if (remaining <= TimeSpan.FromMilliseconds(120))
+            {
+                var next = _preparedIndex >= 0 ? _preparedIndex : GetNextIndex();
+                if (next >= 0 && next != _index) BeginGapless(next);
+                else _ = NextAsync();
+            }
+            return;
+        }
+
+        if (!_crossfading && remaining <= TimeSpan.FromMilliseconds(120)) _ = NextAsync();
+    }
+
+    private void PrepareNext(int nextIndex)
+    {
+        try
+        {
+            if (nextIndex < 0 || nextIndex >= _queue.Count || nextIndex == _index) return;
+            DisposePreparedNext();
+            var song = _queue[nextIndex];
+            if (!File.Exists(song.Path)) return;
+            _next = CreateDeck(song);
+            _next.Volume.Volume = 0;
+            _preparedIndex = nextIndex;
+            _nextInMixer = false;
+        }
+        catch { DisposePreparedNext(); }
+    }
+
+    private void BeginGapless(int nextIndex)
+    {
+        if (_crossfading) return;
+        if (_next is null || _preparedIndex != nextIndex) PrepareNext(nextIndex);
+        var nextDeck = _next;
+        var mixer = _mixer;
+        if (nextDeck is null || mixer is null) { _ = NextAsync(); return; }
+        _crossfading = true;
+        nextDeck.Volume.Volume = (float)Volume;
+        mixer.AddMixerInput(nextDeck.Volume);
+        _nextInMixer = true;
+        _ = CompletePreparedTransitionAsync(nextIndex, TimeSpan.FromMilliseconds(35));
     }
 
     private void BeginCrossfade(int nextIndex, TimeSpan duration)
@@ -371,48 +444,68 @@ public sealed class PlaybackEngine : IDisposable
             if (!File.Exists(song.Path)) return;
             var mixer = _mixer;
             if (mixer is null) return;
-            _next = CreateDeck(song.Path);
+            if (_next is null || _preparedIndex != nextIndex)
+            {
+                DisposePreparedNext();
+                _next = CreateDeck(song);
+                _preparedIndex = nextIndex;
+            }
             mixer.AddMixerInput(_next.Volume);
+            _nextInMixer = true;
             _crossfading = true;
             var started = DateTime.UtcNow;
             _ = Task.Run(async () =>
             {
                 while (!_disposed)
                 {
-                    var t = Math.Clamp((DateTime.UtcNow - started).TotalMilliseconds / duration.TotalMilliseconds, 0, 1);
+                    var t = Math.Clamp((DateTime.UtcNow - started).TotalMilliseconds / Math.Max(1, duration.TotalMilliseconds), 0, 1);
                     if (_current is not null) _current.Volume.Volume = (float)(Volume * (1 - t));
                     if (_next is not null) _next.Volume.Volume = (float)(Volume * t);
                     if (t >= 1) break;
                     await Task.Delay(25);
                 }
-                await _gate.WaitAsync();
-                try
-                {
-                    if (_next is null) return;
-                    if (_current is not null)
-                    {
-                        _mixer?.RemoveMixerInput(_current.Volume);
-                        _current.Dispose();
-                    }
-                    _current = _next;
-                    _next = null;
-                    _index = nextIndex;
-                    _crossfading = false;
-                    _settings.Value.PersistedPositionSeconds = 0;
-                    await PersistQueueAsync();
-                    _ = _db.RecordPlayedAsync(song.Id);
-                    TrackChanged?.Invoke(this, song);
-                    StateChanged?.Invoke(this, EventArgs.Empty);
-                }
-                finally { _gate.Release(); }
+                await CompletePreparedTransitionAsync(nextIndex, TimeSpan.Zero);
             });
         }
-        catch
+        catch { DisposePreparedNext(); _crossfading = false; }
+    }
+
+    private async Task CompletePreparedTransitionAsync(int nextIndex, TimeSpan delay)
+    {
+        if (delay > TimeSpan.Zero) await Task.Delay(delay);
+        await _gate.WaitAsync();
+        try
         {
-            _next?.Dispose();
+            if (_next is null || _preparedIndex != nextIndex) { _crossfading = false; return; }
+            var song = _queue[nextIndex];
+            if (_current is not null)
+            {
+                _mixer?.RemoveMixerInput(_current.Volume);
+                _current.Dispose();
+            }
+            _current = _next;
             _next = null;
+            _nextInMixer = false;
+            _preparedIndex = -1;
+            _index = nextIndex;
             _crossfading = false;
+            _settings.Value.PersistedPositionSeconds = 0;
+            await PersistQueueAsync();
+            _ = _db.RecordPlayedAsync(song.Id);
+            TrackChanged?.Invoke(this, song);
+            StateChanged?.Invoke(this, EventArgs.Empty);
         }
+        finally { _gate.Release(); }
+    }
+
+    private void DisposePreparedNext()
+    {
+        if (_next is null) { _preparedIndex = -1; _nextInMixer = false; return; }
+        if (_nextInMixer) _mixer?.RemoveMixerInput(_next.Volume);
+        _next.Dispose();
+        _next = null;
+        _preparedIndex = -1;
+        _nextInMixer = false;
     }
 
     private void StopDecks()
@@ -423,12 +516,7 @@ public sealed class PlaybackEngine : IDisposable
             _current.Dispose();
             _current = null;
         }
-        if (_next is not null)
-        {
-            _mixer?.RemoveMixerInput(_next.Volume);
-            _next.Dispose();
-            _next = null;
-        }
+        DisposePreparedNext();
         _crossfading = false;
     }
 
