@@ -97,4 +97,64 @@ public sealed class CoreTests
         }
         finally { Directory.Delete(root, true); }
     }
+
+    [Fact]
+    public async Task PlaylistFolders_PreventCycles_AndAssignPlaylists()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "db.sqlite");
+        try
+        {
+            var db = new NeoDatabase(dbPath);
+            await db.InitializeAsync();
+            var manager = new PlaylistFolderManager(dbPath);
+            var rootFolder = await manager.CreateAsync("Root");
+            var childFolder = await manager.CreateAsync("Child", rootFolder);
+            await Assert.ThrowsAsync<InvalidOperationException>(() => manager.MoveAsync(rootFolder, childFolder));
+
+            var playlistId = await db.CreatePlaylistAsync("Inside");
+            await manager.AssignPlaylistAsync(playlistId, childFolder);
+            var playlist = (await db.GetPlaylistsAsync()).Single(x => x.Id == playlistId);
+            Assert.Equal(childFolder, playlist.FolderId);
+
+            await manager.DeleteAsync(childFolder);
+            playlist = (await db.GetPlaylistsAsync()).Single(x => x.Id == playlistId);
+            Assert.Null(playlist.FolderId);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+
+    [Fact]
+    public async Task M3u8_ExportImport_RoundTripsLibraryTracks()
+    {
+        var root = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var dbPath = Path.Combine(root, "db.sqlite");
+        try
+        {
+            var db = new NeoDatabase(dbPath);
+            await db.InitializeAsync();
+            var collections = new LibraryCollectionsService(dbPath);
+            var transfer = new PlaylistTransferService(db, collections);
+            var songPath = Path.Combine(root, "song.mp3");
+            await File.WriteAllBytesAsync(songPath, new byte[] { 0 });
+            var songId = await db.UpsertSongAsync(new Song(0, songPath, "Song", "Artist", "Album", "Rock", 123000, 1, 2026, null, false, false, 1, 0, 0));
+            var playlistId = await db.CreatePlaylistAsync("Export me");
+            await collections.AddToPlaylistAsync(playlistId, songId);
+            var playlist = (await db.GetPlaylistsAsync()).Single(x => x.Id == playlistId);
+            var m3u = Path.Combine(root, "mix.m3u8");
+
+            await transfer.ExportM3u8Async(playlist, m3u);
+            var exported = await File.ReadAllTextAsync(m3u);
+            Assert.Contains("#EXTM3U", exported);
+            Assert.Contains(songPath, exported);
+
+            var imported = await transfer.ImportM3u8Async(m3u, "Imported");
+            var importedSongs = await collections.GetPlaylistSongsAsync(imported.Id);
+            Assert.Single(importedSongs);
+            Assert.Equal(songId, importedSongs[0].Id);
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }
