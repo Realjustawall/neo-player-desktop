@@ -12,10 +12,10 @@
       <DockPanel>
         <StackPanel DockPanel.Dock="Top">
           <TextBlock Text="NEO" FontSize="30" FontWeight="Bold" Margin="10,8,10,22"/>
-          <Button Content="⌂  {DynamicResource Home}" Command="{Binding HomeCommand}" HorizontalContentAlignment="Left"/>
-          <Button Content="⌕  {DynamicResource Search}" Command="{Binding SearchPageCommand}" HorizontalContentAlignment="Left"/>
-          <Button Content="♫  {DynamicResource Library}" Command="{Binding LibraryCommand}" HorizontalContentAlignment="Left"/>
-          <Button Content="⚙  {DynamicResource Settings}" Command="{Binding SettingsCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="{DynamicResource Home}" Command="{Binding HomeCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="{DynamicResource Search}" Command="{Binding SearchPageCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="{DynamicResource Library}" Command="{Binding LibraryCommand}" HorizontalContentAlignment="Left"/>
+          <Button Content="{DynamicResource Settings}" Command="{Binding SettingsCommand}" HorizontalContentAlignment="Left"/>
         </StackPanel>
         <StackPanel DockPanel.Dock="Bottom">
           <TextBlock Text="{Binding Status}" Foreground="{DynamicResource NeoMuted}" TextWrapping="Wrap" Margin="10"/>
