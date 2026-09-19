@@ -164,7 +164,7 @@ public sealed class PlaybackEngine : IDisposable
         try
         {
             var song = _queue[nextIndex]; if (!File.Exists(song.Path)) return;
-            var mixer = _mixer ?? return;
+            if (_mixer is not { } mixer) return;
             _next = CreateDeck(song.Path); mixer.AddMixerInput(_next.Volume); _crossfading = true;
             var started = DateTime.UtcNow;
             _ = Task.Run(async () =>
