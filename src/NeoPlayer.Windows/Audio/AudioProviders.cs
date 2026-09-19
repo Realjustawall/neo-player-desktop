@@ -20,6 +20,6 @@ public sealed class DspSampleProvider : ISampleProvider
 public sealed class Deck : IDisposable
 {
  public FfmpegPcmSource Decoder{get;} public DspSampleProvider Dsp{get;} public VolumeSampleProvider Volume{get;} public GateSampleProvider Gate{get;} public long SongId{get;} public bool Enabled{get=>Gate.Enabled;set=>Gate.Enabled=value;}
- public Deck(long id,string path,double start,float speed){SongId=id;Decoder=new(path,start,speed);Dsp=new(Decoder);Volume=new VolumeSampleProvider(Dsp){Volume=1};Gate=new GateSampleProvider(Volume);}
+ public Deck(long id,string path,double start,float speed){SongId=id;Decoder=new(path, startSeconds: start, playbackSpeed: speed);Dsp=new(Decoder);Volume=new VolumeSampleProvider(Dsp){Volume=1};Gate=new GateSampleProvider(Volume);}
  public void Dispose()=>Decoder.Dispose();
 }

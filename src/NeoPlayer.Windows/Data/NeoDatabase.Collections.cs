@@ -12,7 +12,7 @@ public sealed partial class NeoDatabase
         await _gate.WaitAsync();
         try
         {
-            await using var tx = await Conn.BeginTransactionAsync();
+            await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)await Conn.BeginTransactionAsync();
             for (var i = 0; i < ids.Count; i++)
             {
                 await using var cmd = Conn.CreateCommand();
@@ -45,7 +45,7 @@ public sealed partial class NeoDatabase
         await _gate.WaitAsync();
         try
         {
-            await using var tx = await Conn.BeginTransactionAsync();
+            await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)await Conn.BeginTransactionAsync();
             for (var i = 0; i < ids.Count; i++)
             {
                 await using var cmd = Conn.CreateCommand();
@@ -76,7 +76,7 @@ public sealed partial class NeoDatabase
         await _gate.WaitAsync();
         try
         {
-            await using var tx = await Conn.BeginTransactionAsync();
+            await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)await Conn.BeginTransactionAsync();
             for (var i = 0; i < pins.Count; i++)
             {
                 await using var cmd = Conn.CreateCommand();
@@ -111,7 +111,7 @@ public sealed partial class NeoDatabase
         await _gate.WaitAsync();
         try
         {
-            await using var tx = await Conn.BeginTransactionAsync();
+            await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)await Conn.BeginTransactionAsync();
             for (var i = 0; i < ids.Count; i++)
             {
                 await using var cmd = Conn.CreateCommand();
@@ -152,7 +152,7 @@ public sealed partial class NeoDatabase
         await _gate.WaitAsync();
         try
         {
-            await using var tx = await Conn.BeginTransactionAsync();
+            await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)await Conn.BeginTransactionAsync();
             async Task ReplaceAsync(string table, string column, string oldRoot, string newRoot)
             {
                 await using var cmd = Conn.CreateCommand();
@@ -202,3 +202,4 @@ public sealed partial class NeoDatabase
         "INSERT OR REPLACE INTO track_experience_preferences(id,selectedSpeechModelId,selectedSpeechLanguage) VALUES(0,@m,@l)",
         ("@m", modelId ?? ""), ("@l", string.IsNullOrWhiteSpace(language) ? "en" : language));
 }
+
