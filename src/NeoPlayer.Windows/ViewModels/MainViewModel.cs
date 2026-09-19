@@ -105,9 +105,9 @@ public sealed class MainViewModel : ObservableObject
 
     private void AddSource()
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog { Description = "Choose a music folder", UseDescriptionForTitle = true };
-        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
-        var path = Path.GetFullPath(dialog.SelectedPath); if (_host.Settings.Value.SourceFolders.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
+        var dialog = new OpenFolderDialog { Title = "Choose a music folder", Multiselect = false };
+        if (dialog.ShowDialog() != true) return;
+        var path = Path.GetFullPath(dialog.FolderName); if (_host.Settings.Value.SourceFolders.Contains(path, StringComparer.OrdinalIgnoreCase)) return;
         _host.Settings.Value.SourceFolders.Add(path); Sources.Add(path); _ = _host.Settings.SaveAsync();
     }
 
