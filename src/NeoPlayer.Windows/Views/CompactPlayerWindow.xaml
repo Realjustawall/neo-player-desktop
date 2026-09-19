@@ -1,0 +1,27 @@
+<Window x:Class="NeoPlayer.Windows.Views.CompactPlayerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:NeoPlayer.Windows.Controls"
+        Width="390" Height="116" MinWidth="340" ResizeMode="NoResize" WindowStyle="None"
+        ShowInTaskbar="False" Topmost="True" Background="{DynamicResource NeoBackground}"
+        FlowDirection="{Binding FlowDirection}" MouseLeftButtonDown="Window_MouseLeftButtonDown">
+    <Border Margin="5" Padding="10" CornerRadius="20" Background="{DynamicResource NeoSurface}" BorderBrush="{DynamicResource NeoOutline}" BorderThickness="1">
+        <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="76"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Border Width="70" Height="70" CornerRadius="14" ClipToBounds="True" Background="{DynamicResource NeoSurfaceHigh}">
+                <controls:ArtworkImage Song="{Binding Playback.Current}" Stretch="UniformToFill"/>
+            </Border>
+            <StackPanel Grid.Column="1" Margin="10,2" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Playback.Current.Title}" FontWeight="SemiBold" FontSize="14" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding Playback.Current.Artist}" Foreground="{DynamicResource NeoMuted}" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                <ProgressBar Height="3" Margin="0,8,0,0" Minimum="0" Maximum="{Binding Playback.DurationMs}" Value="{Binding Playback.PositionMs}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Style="{StaticResource IconButton}" Content="⏮" Command="{Binding PreviousCommand}"/>
+                <Button Style="{StaticResource AccentButton}" Width="48" Height="44" Content="{Binding PlayPauseGlyph}" Command="{Binding TogglePlayCommand}"/>
+                <Button Style="{StaticResource IconButton}" Content="⏭" Command="{Binding NextCommand}"/>
+                <Button Style="{StaticResource IconButton}" Content="×" Click="Close_Click"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>
