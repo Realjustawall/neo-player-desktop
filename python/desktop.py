@@ -9,7 +9,7 @@ import urllib.request
 from pathlib import Path
 
 import webview
-
+import sqlite_close  # noqa: F401 - patches sqlite3 connection context behavior
 from backend import NeoStore, create_server
 
 APP_NAME = 'NEO Player'
