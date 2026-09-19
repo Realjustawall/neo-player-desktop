@@ -19,4 +19,4 @@ Local library scanning with source/exclusion folders, metadata, search, favorite
 
 CI builds and tests the solution, publishes a self-contained compressed win-x64 executable, runs the published executable with `--self-test`, runs a WPF construction smoke test with `--ui-smoke`, verifies startup exit codes, and rejects oversized packages.
 
-This repository intentionally does not publish a GitHub Release until the runtime smoke gates pass.
+The GitHub Release stays empty until every runtime smoke gate passes on a Windows runner.
