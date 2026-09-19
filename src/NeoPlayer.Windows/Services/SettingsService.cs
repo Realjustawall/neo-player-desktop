@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using NeoPlayer.Windows.Core;
 using NeoPlayer.Windows.Models;
 
@@ -7,7 +8,11 @@ namespace NeoPlayer.Windows.Services;
 public sealed class SettingsService
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly JsonSerializerOptions _json = new() { WriteIndented = true };
+    private readonly JsonSerializerOptions _json = new()
+    {
+        WriteIndented = true,
+        NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+    };
     public AppSettings Value { get; private set; } = new();
     public event EventHandler? Changed;
 
