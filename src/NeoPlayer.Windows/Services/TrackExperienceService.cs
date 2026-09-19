@@ -15,11 +15,7 @@ public sealed class TrackExperienceService(NeoDatabase db, ArtworkService artwor
         return Task.FromResult(destination);
     }
 
-    public async Task SetArtworkAsync(Song song, string source)
-    {
-        var destination = await ImportAssetAsync(song.Id, source, "artwork");
-        await db.SetSongArtworkAsync(song.Id, destination);
-    }
+    public Task SetArtworkAsync(Song song, string source) => artwork.SetCustomArtworkAsync(song, source);
 
     public Task<TrackVisualProfile?> LoadAsync(long songId) => db.GetTrackVisualAsync(songId);
     public Task SaveAsync(TrackVisualProfile profile) => db.SaveTrackVisualAsync(profile);
