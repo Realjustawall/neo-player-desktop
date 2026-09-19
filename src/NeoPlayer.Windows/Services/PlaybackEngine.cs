@@ -91,18 +91,23 @@ public sealed class PlaybackEngine : IDisposable
 
     private void EnsureOutput()
     {
-        if (_output is not null) return;
-        _mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2)) { ReadFully = true };
-        try { _output = new WasapiOut(AudioClientShareMode.Shared, true, 100); }
-        catch { _output = new WaveOutEvent { DesiredLatency = 120 }; }
-        _output.Init(_mixer);
+        if (_output is not null && _mixer is not null) return;
+        var mixer = new MixingSampleProvider(WaveFormat.CreateIeeeFloatWaveFormat(44100, 2)) { ReadFully = true };
+        IWavePlayer output;
+        try { output = new WasapiOut(AudioClientShareMode.Shared, true, 100); }
+        catch { output = new WaveOutEvent { DesiredLatency = 120 }; }
+        output.Init(mixer);
+        _mixer = mixer;
+        _output = output;
     }
 
     private void StartCurrent()
     {
         var song = CurrentSong; if (song is null || !File.Exists(song.Path)) return;
         EnsureOutput(); StopDecks();
-        _current = CreateDeck(song.Path); _current.Volume.Volume = (float)Volume; _mixer!.AddMixerInput(_current.Volume); _output!.Play();
+        var mixer = _mixer ?? throw new InvalidOperationException("Audio mixer was not initialized.");
+        var output = _output ?? throw new InvalidOperationException("Audio output was not initialized.");
+        _current = CreateDeck(song.Path); _current.Volume.Volume = (float)Volume; mixer.AddMixerInput(_current.Volume); output.Play();
         _ = _db.RecordPlayedAsync(song.Id); TrackChanged?.Invoke(this, song); StateChanged?.Invoke(this, EventArgs.Empty);
     }
 
@@ -159,7 +164,8 @@ public sealed class PlaybackEngine : IDisposable
         try
         {
             var song = _queue[nextIndex]; if (!File.Exists(song.Path)) return;
-            _next = CreateDeck(song.Path); _mixer!.AddMixerInput(_next.Volume); _crossfading = true;
+            var mixer = _mixer ?? return;
+            _next = CreateDeck(song.Path); mixer.AddMixerInput(_next.Volume); _crossfading = true;
             var started = DateTime.UtcNow;
             _ = Task.Run(async () =>
             {
