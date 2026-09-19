@@ -31,7 +31,7 @@
       </TabItem>
       <TabItem Header="Playback">
         <StackPanel Margin="16" MaxWidth="600" HorizontalAlignment="Left">
-          <TextBlock Text="Transitions & loudness" FontSize="20" FontWeight="SemiBold"/>
+          <TextBlock Text="Transitions &amp; loudness" FontSize="20" FontWeight="SemiBold"/>
           <CheckBox x:Name="GaplessCheck" Content="Preload next track for gapless transitions" Checked="GaplessCheck_OnChanged" Unchecked="GaplessCheck_OnChanged" Margin="0,12,0,4"/>
           <CheckBox x:Name="NormalizeCheck" Content="Normalize loudness from local analysis cache" Checked="NormalizeCheck_OnChanged" Unchecked="NormalizeCheck_OnChanged" Margin="0,4"/>
           <TextBlock Text="Target loudness (LUFS)" Margin="0,14,0,2"/>
