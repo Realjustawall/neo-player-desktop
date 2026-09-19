@@ -65,6 +65,7 @@ public sealed class AppHost : IDisposable
     public LocalizationService Localization { get; }
     public ThemeService Theme { get; }
     public WindowsIntegrationService Windows { get; } = new();
+    public SleepTimerService SleepTimer { get; } = new();
 
     public AppHost()
     {
@@ -77,6 +78,7 @@ public sealed class AppHost : IDisposable
         SmartMix = new SmartMixService(Database);
         Localization = new LocalizationService(Settings);
         Theme = new ThemeService(Settings);
+        SleepTimer.Elapsed += (_, _) => Playback.Pause();
     }
 
     public async Task InitializeAsync()
@@ -91,5 +93,9 @@ public sealed class AppHost : IDisposable
         }
     }
 
-    public void Dispose() => Playback.Dispose();
+    public void Dispose()
+    {
+        SleepTimer.Dispose();
+        Playback.Dispose();
+    }
 }
