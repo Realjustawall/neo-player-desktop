@@ -259,7 +259,7 @@
                         </Grid>
                     </Border>
                     <Ellipse Fill="{DynamicResource NeoAccent}" Width="330" Height="330" IsHitTestVisible="False" Opacity="{Binding VisualPulse}" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter=pulse}"/>
-                    <ItemsControl ItemsSource="{Binding SpectrumBars}" VerticalAlignment="Bottom" Height="130" Margin="36" IsHitTestVisible="False" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter=spectrum,bars}">
+                    <ItemsControl ItemsSource="{Binding SpectrumBars}" VerticalAlignment="Bottom" Height="130" Margin="36" IsHitTestVisible="False" Visibility="{Binding Theme.VisualizerMode, Converter={StaticResource ContainsValueVisibility}, ConverterParameter='spectrum,bars'}">
                         <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Rows="1"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate><DataTemplate><Border VerticalAlignment="Bottom" Margin="1" CornerRadius="2" Background="{DynamicResource NeoAccent}" Height="{Binding Converter={StaticResource SpectrumHeight}, ConverterParameter=110}" Opacity="0.72"/></DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
