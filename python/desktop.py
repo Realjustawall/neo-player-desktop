@@ -65,6 +65,7 @@ def run_ui_smoke() -> int:
     with tempfile.TemporaryDirectory(prefix='neo-player-ui-') as tmp:
         store = NeoStore(tmp)
         server = create_server(store, resource_path('dist'))
+        state = {'ok': False, 'error': 'React UI did not render'}
         try:
             with urllib.request.urlopen(server.url + '/api/health', timeout=5) as response:
                 payload = response.read().decode('utf-8')
@@ -72,11 +73,39 @@ def run_ui_smoke() -> int:
             with urllib.request.urlopen(server.url + '/', timeout=5) as response:
                 html = response.read().decode('utf-8')
                 assert '<div id="root"></div>' in html
-            window = webview.create_window(APP_NAME, server.url, width=1180, height=760, min_size=(900, 600), js_api=DesktopApi())
-            def close_after_start():
-                time.sleep(2)
-                window.destroy()
-            webview.start(close_after_start, gui='edgechromium')
+
+            window = webview.create_window(
+                APP_NAME,
+                server.url,
+                width=1180,
+                height=760,
+                min_size=(900, 600),
+                js_api=DesktopApi(),
+                background_color='#0b0b0b',
+            )
+
+            def verify_render(target):
+                deadline = time.time() + 12
+                last_error = None
+                while time.time() < deadline:
+                    try:
+                        rendered = target.evaluate_js("Boolean(document.querySelector('.app-shell') && document.body.innerText.includes('NEO'))")
+                        if rendered:
+                            state['ok'] = True
+                            state['error'] = ''
+                            print('NEO_UI_RENDER_OK')
+                            target.destroy()
+                            return
+                    except Exception as ex:
+                        last_error = ex
+                    time.sleep(0.25)
+                if last_error is not None:
+                    state['error'] = f'React DOM verification failed: {last_error}'
+                target.destroy()
+
+            webview.start(verify_render, window, gui='edgechromium')
+            if not state['ok']:
+                raise RuntimeError(state['error'])
         finally:
             server.stop()
     print('NEO_UI_SMOKE_OK')
@@ -87,7 +116,15 @@ def run_app() -> int:
     store = NeoStore(data_dir())
     server = create_server(store, resource_path('dist'))
     try:
-        webview.create_window(APP_NAME, server.url, width=1280, height=820, min_size=(920, 620), js_api=DesktopApi(), background_color='#0b0b0b')
+        webview.create_window(
+            APP_NAME,
+            server.url,
+            width=1280,
+            height=820,
+            min_size=(920, 620),
+            js_api=DesktopApi(),
+            background_color='#0b0b0b',
+        )
         webview.start(gui='edgechromium')
         return 0
     finally:
