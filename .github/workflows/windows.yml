@@ -1,0 +1,93 @@
+name: Windows React Python CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neo-react-python-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install frontend dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Build React UI
+        run: npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          architecture: 'x64'
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+        shell: bash
+
+      - name: Python syntax check
+        run: python -m compileall -q python tests
+
+      - name: Backend unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Source self-test
+        run: python python/desktop.py --self-test
+
+      - name: Build self-contained EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name "NEO Player" --add-data "dist;dist" --hidden-import webview.platforms.edgechromium python/desktop.py
+          if (!(Test-Path "dist/NEO Player.exe")) { throw "EXE was not created" }
+
+      - name: Packaged EXE self-test
+        shell: pwsh
+        run: |
+          $env:NEO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'neo-packaged-selftest'
+          $p = Start-Process -FilePath "dist/NEO Player.exe" -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+          if ($p.ExitCode -ne 0) { throw "Packaged self-test failed with exit code $($p.ExitCode)" }
+
+      - name: Packaged WebView UI smoke
+        shell: pwsh
+        run: |
+          $env:NEO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'neo-packaged-ui'
+          $p = Start-Process -FilePath "dist/NEO Player.exe" -ArgumentList '--ui-smoke' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Packaged UI smoke failed with exit code $($p.ExitCode)" }
+
+      - name: Package and size gate
+        shell: pwsh
+        run: |
+          $exe = Get-Item "dist/NEO Player.exe"
+          $mb = [math]::Round($exe.Length / 1MB, 2)
+          Write-Host "EXE size: $mb MB"
+          if ($mb -gt 120) { throw "EXE too large: $mb MB" }
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item "dist/NEO Player.exe" "release/NEO Player.exe"
+          Compress-Archive -Path "release/NEO Player.exe" -DestinationPath "release/NEO-Player-win-x64.zip" -CompressionLevel Optimal
+          $zip = Get-Item "release/NEO-Player-win-x64.zip"
+          Write-Host "ZIP size: $([math]::Round($zip.Length / 1MB, 2)) MB"
+          Get-FileHash "release/NEO-Player-win-x64.zip" -Algorithm SHA256
+
+      - name: Upload tested Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NEO-Player-React-Python-win-x64
+          path: release/NEO-Player-win-x64.zip
+          retention-days: 14
