@@ -1,12 +1,12 @@
-<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-  <x:String x:Key="AppName">NEO Player</x:String>
-  <x:String x:Key="Home">خانه</x:String>
-  <x:String x:Key="Search">جستجو</x:String>
-  <x:String x:Key="Library">کتابخانه</x:String>
-  <x:String x:Key="Settings">تنظیمات</x:String>
-  <x:String x:Key="Rescan">اسکن دوباره کتابخانه</x:String>
-  <x:String x:Key="AddFolder">افزودن پوشه موسیقی</x:String>
-  <x:String x:Key="Playlists">پلی‌لیست‌ها</x:String>
-  <x:String x:Key="Backup">پشتیبان‌گیری</x:String>
-  <x:String x:Key="Restore">بازیابی</x:String>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+  <sys:String x:Key="AppName">NEO Player</sys:String>
+  <sys:String x:Key="Home">خانه</sys:String>
+  <sys:String x:Key="Search">جستجو</sys:String>
+  <sys:String x:Key="Library">کتابخانه</sys:String>
+  <sys:String x:Key="Settings">تنظیمات</sys:String>
+  <sys:String x:Key="Rescan">اسکن دوباره کتابخانه</sys:String>
+  <sys:String x:Key="AddFolder">افزودن پوشه موسیقی</sys:String>
+  <sys:String x:Key="Playlists">پلی‌لیست‌ها</sys:String>
+  <sys:String x:Key="Backup">پشتیبان‌گیری</sys:String>
+  <sys:String x:Key="Restore">بازیابی</sys:String>
 </ResourceDictionary>
