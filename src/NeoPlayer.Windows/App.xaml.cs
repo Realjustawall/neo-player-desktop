@@ -33,7 +33,9 @@ public partial class App : Application
             }
 
             var window = new MainWindow { DataContext = vm };
-            MainWindow = window; window.Show();
+            MainWindow = window;
+            vm.RestoreWindowPlacement(window);
+            window.Show();
         }
         catch (Exception ex)
         {
@@ -54,6 +56,7 @@ public sealed class AppHost : IDisposable
 {
     public SettingsService Settings { get; } = new();
     public NeoDatabase Database { get; }
+    public LibraryCollectionsService Collections { get; }
     public LibraryScanner Scanner { get; }
     public PlaybackEngine Playback { get; }
     public AudioAnalysisService Analysis { get; }
@@ -61,11 +64,13 @@ public sealed class AppHost : IDisposable
     public BackupService Backup { get; } = new();
     public LocalizationService Localization { get; }
     public ThemeService Theme { get; }
+    public WindowsIntegrationService Windows { get; } = new();
 
     public AppHost()
     {
         AppPaths.Ensure();
         Database = new NeoDatabase();
+        Collections = new LibraryCollectionsService();
         Scanner = new LibraryScanner(Database, Settings);
         Playback = new PlaybackEngine(Database, Settings);
         Analysis = new AudioAnalysisService(Database);
@@ -80,6 +85,10 @@ public sealed class AppHost : IDisposable
         await Database.InitializeAsync();
         Localization.Apply();
         Theme.Apply();
+        if (Settings.Value.StartWithWindows != Windows.IsStartupEnabled())
+        {
+            try { Windows.SetStartupEnabled(Settings.Value.StartWithWindows); } catch { }
+        }
     }
 
     public void Dispose() => Playback.Dispose();
