@@ -46,14 +46,14 @@ jobs:
         shell: pwsh
         run: |
           $env:NEO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'neo-self-test'
-          & "$env:PUBLISH_DIR/NEO Player.exe" --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Self-test failed with exit code $LASTEXITCODE" }
+          $process = Start-Process -FilePath "$env:PUBLISH_DIR/NEO Player.exe" -ArgumentList '--self-test' -Wait -PassThru -NoNewWindow
+          if ($process.ExitCode -ne 0) { throw "Self-test failed with exit code $($process.ExitCode)" }
       - name: WPF UI smoke test
         shell: pwsh
         run: |
           $env:NEO_DATA_DIR = Join-Path $env:RUNNER_TEMP 'neo-ui-smoke'
-          & "$env:PUBLISH_DIR/NEO Player.exe" --ui-smoke
-          if ($LASTEXITCODE -ne 0) { throw "UI smoke test failed with exit code $LASTEXITCODE" }
+          $process = Start-Process -FilePath "$env:PUBLISH_DIR/NEO Player.exe" -ArgumentList '--ui-smoke' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "UI smoke test failed with exit code $($process.ExitCode)" }
       - name: Package size gate
         shell: pwsh
         run: |
