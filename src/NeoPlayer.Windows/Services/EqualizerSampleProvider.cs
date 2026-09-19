@@ -12,6 +12,7 @@ public sealed class EqualizerSampleProvider : ISampleProvider
     private readonly float[] _bands = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
     private float _bassDb;
     private float _width = 1f;
+    private float _preamp = 1f;
 
     public EqualizerSampleProvider(ISampleProvider source)
     {
@@ -24,8 +25,13 @@ public sealed class EqualizerSampleProvider : ISampleProvider
     public IReadOnlyList<float> Gains => _gains;
 
     public void SetBand(int index, float db) { if ((uint)index >= _gains.Length) return; _gains[index] = Math.Clamp(db, -12, 12); Rebuild(); }
-    public void SetBass(float db) { _bassDb = Math.Clamp(db, 0, 12); Rebuild(); }
+    public void SetBass(float db) { _bassDb = Math.Clamp(db, -12, 12); Rebuild(); }
     public void SetStereoWidth(float width) => _width = Math.Clamp(width, 0, 2);
+    public void SetPreampDb(double db)
+    {
+        db = Math.Clamp(db, -18, 6);
+        _preamp = (float)Math.Pow(10, db / 20d);
+    }
 
     private void Rebuild()
     {
@@ -43,9 +49,10 @@ public sealed class EqualizerSampleProvider : ISampleProvider
         var channels = WaveFormat.Channels;
         for (var n = 0; n < read; n++)
         {
-            var ch = n % channels; var sample = buffer[offset + n];
+            var ch = n % channels;
+            var sample = buffer[offset + n] * _preamp;
             for (var i = 0; i < _bands.Length + 1; i++) sample = _filters[ch, i].Transform(sample);
-            buffer[offset + n] = sample;
+            buffer[offset + n] = Math.Clamp(sample, -1f, 1f);
         }
         if (channels == 2 && Math.Abs(_width - 1f) > 0.001f)
         {
