@@ -97,7 +97,7 @@
           <TextBlock Text="{DynamicResource Settings}" FontSize="30" FontWeight="SemiBold" Margin="0,0,0,20"/>
           <TextBlock Text="Music sources" FontSize="18" FontWeight="SemiBold"/><ListBox ItemsSource="{Binding Sources}" MinHeight="70"><ListBox.ItemTemplate><DataTemplate><DockPanel><Button DockPanel.Dock="Right" Content="Remove" Command="{Binding DataContext.RemoveSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/><TextBlock Text="{Binding}" TextTrimming="CharacterEllipsis"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
           <StackPanel Orientation="Horizontal"><Button Content="{DynamicResource AddFolder}" Command="{Binding AddSourceCommand}"/><Button Content="{DynamicResource Rescan}" Command="{Binding ScanCommand}"/></StackPanel>
-          <ProgressBar Minimum="0" Maximum="100" Value="{Binding ScanProgress}" Height="6" Margin="4,8,4,20"/>
+          <ProgressBar Minimum="0" Maximum="100" Value="{Binding ScanProgress, Mode=OneWay}" Height="6" Margin="4,8,4,20"/>
 
           <TextBlock Text="Excluded folders" FontSize="18" FontWeight="SemiBold"/><ListBox ItemsSource="{Binding ExcludedSources}" MaxHeight="110"><ListBox.ItemTemplate><DataTemplate><DockPanel><Button DockPanel.Dock="Right" Content="Remove" Command="{Binding DataContext.RemoveExcludedSourceCommand, RelativeSource={RelativeSource AncestorType=Window}}" CommandParameter="{Binding}"/><TextBlock Text="{Binding}"/></DockPanel></DataTemplate></ListBox.ItemTemplate></ListBox><Button Content="Exclude folder" Command="{Binding AddExcludedSourceCommand}" HorizontalAlignment="Left"/>
 
