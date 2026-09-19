@@ -54,6 +54,8 @@ public partial class App : Application
 
 public sealed class AppHost : IDisposable
 {
+    public static AppHost? Current { get; private set; }
+
     public SettingsService Settings { get; } = new();
     public NeoDatabase Database { get; }
     public LibraryCollectionsService Collections { get; }
@@ -71,6 +73,7 @@ public sealed class AppHost : IDisposable
 
     public AppHost()
     {
+        Current = this;
         AppPaths.Ensure();
         Database = new NeoDatabase();
         Collections = new LibraryCollectionsService();
@@ -101,5 +104,6 @@ public sealed class AppHost : IDisposable
     {
         SleepTimer.Dispose();
         Playback.Dispose();
+        if (ReferenceEquals(Current, this)) Current = null;
     }
 }
