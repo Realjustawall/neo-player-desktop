@@ -12,6 +12,7 @@ public partial class MainWindow : Window
 {
     private readonly GlobalMediaKeyService _mediaKeys = new();
     private CompactPlayerWindow? _compact;
+    private AdvancedToolsWindow? _advanced;
 
     public MainWindow()
     {
@@ -19,6 +20,12 @@ public partial class MainWindow : Window
         PreviewKeyDown += OnPreviewKeyDown;
         SourceInitialized += OnSourceInitialized;
         Closed += OnClosed;
+
+        var menu = new ContextMenu();
+        var advanced = new MenuItem { Header = "Advanced tools…\tCtrl+Shift+T" };
+        advanced.Click += (_, _) => OpenAdvancedTools();
+        menu.Items.Add(advanced);
+        ContextMenu = menu;
     }
 
     private MainViewModel? Vm => DataContext as MainViewModel;
@@ -55,8 +62,25 @@ public partial class MainWindow : Window
         _compact.Show();
     }
 
+    private void OpenAdvancedTools()
+    {
+        if (_advanced is not null)
+        {
+            if (_advanced.WindowState == WindowState.Minimized) _advanced.WindowState = WindowState.Normal;
+            _advanced.Activate();
+            return;
+        }
+        _advanced = new AdvancedToolsWindow { Owner = this };
+        _advanced.Closed += (_, _) => _advanced = null;
+        _advanced.Show();
+    }
+
     private void OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control) && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && e.Key == Key.T)
+        {
+            OpenAdvancedTools(); e.Handled = true; return;
+        }
         if (Vm is null || Keyboard.FocusedElement is TextBox) return;
         if (e.Key is Key.Space or Key.MediaPlayPause) { Vm.PlayPauseCommand.Execute(null); e.Handled = true; }
         else if (e.Key == Key.MediaNextTrack || (e.Key == Key.Right && Keyboard.Modifiers.HasFlag(ModifierKeys.Control))) { Vm.NextCommand.Execute(null); e.Handled = true; }
@@ -68,6 +92,7 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        _advanced?.Close();
         _compact?.Close();
         _mediaKeys.Dispose();
         if (Vm is not null) _ = Vm.SaveWindowPlacementAsync(this);
