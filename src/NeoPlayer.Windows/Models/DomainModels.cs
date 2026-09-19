@@ -20,12 +20,14 @@ public sealed record Song(
 public sealed record Playlist(long Id, string Name, long? FolderId, int SortOrder, string SortMode, bool SortDescending, string ViewMode);
 public sealed record PlaylistFolder(long Id, string Name, long? ParentId, int SortOrder);
 public sealed record Category(long Id, string Name, int SortOrder);
+public sealed record CollectionSummary(string Kind, string Name, int Count);
 public sealed record LyricLine(TimeSpan Time, string Text);
+public sealed record LyricsDocument(string PlainText, string LrcText, string Translation, string Romanization);
 public sealed record SearchSuggestion(string Text, string Kind);
 public sealed record AudioAnalysis(double Rms, double Peak, double EstimatedLufs, double Bpm, double Energy, long AnalyzedAtUnix);
 
 public enum RepeatMode { Off, One, All }
-public enum NavigationPage { Home, Search, Library, Playlists, Settings }
+public enum NavigationPage { Home, Search, Library, Playlists, Queue, Lyrics, Settings }
 public enum ThemeMode { System, Light, Dark, Amoled }
 
 public sealed class AppSettings
@@ -47,4 +49,18 @@ public sealed class AppSettings
     public double TargetLufs { get; set; } = -14;
     public string LibraryView { get; set; } = "List";
     public List<string> RecentSearches { get; set; } = new();
+
+    public List<string> PersistedQueuePaths { get; set; } = new();
+    public int PersistedQueueIndex { get; set; } = -1;
+    public double PersistedPositionSeconds { get; set; }
+
+    public List<float> EqualizerBands { get; set; } = Enumerable.Repeat(0f, 10).ToList();
+    public float BassDb { get; set; }
+    public float StereoWidth { get; set; } = 1f;
+    public bool StartWithWindows { get; set; }
+    public bool RememberWindowPosition { get; set; } = true;
+    public double WindowLeft { get; set; } = double.NaN;
+    public double WindowTop { get; set; } = double.NaN;
+    public double WindowWidth { get; set; } = 1180;
+    public double WindowHeight { get; set; } = 760;
 }
