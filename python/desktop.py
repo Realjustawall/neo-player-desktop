@@ -15,6 +15,7 @@ from typing import Any
 import webview
 import sqlite_close  # noqa: F401 - deterministic SQLite close on Windows
 from backend import NeoStore, create_server
+from ai_runtime import AIRuntimeManager
 from offline_lyrics import OfflineLyricsEngine
 
 APP_NAME = 'NEO Player'
@@ -46,6 +47,7 @@ def _open_dialog_enum():
 class DesktopApi:
     def __init__(self, store: NeoStore):
         self.store = store
+        self.ai = AIRuntimeManager(data_dir() / 'ai-runtime')
 
     def _window(self):
         return webview.windows[0] if webview.windows else None
@@ -111,6 +113,25 @@ class DesktopApi:
         self.store.patch_settings({'offlineLyricsModelPath': str(model.resolve())})
         return str(model.resolve())
 
+    def lyrics_ai_status(self) -> dict[str, Any]:
+        status = self.ai.status()
+        if status.get('phase') == 'model-ready' and Path(str(status.get('message', ''))).is_dir():
+            self.store.patch_settings({'offlineLyricsModelPath': str(Path(status['message']).resolve())})
+        return status
+
+    def install_lyrics_ai(self) -> dict[str, Any]:
+        return self.ai.install()
+
+    def cancel_lyrics_ai_install(self) -> dict[str, Any]:
+        return self.ai.cancel()
+
+    def remove_lyrics_ai(self) -> dict[str, Any]:
+        self.store.patch_settings({'offlineLyricsModelPath': ''})
+        return self.ai.remove()
+
+    def download_offline_lyrics_model(self, model: str = 'small') -> dict[str, Any]:
+        return self.ai.ensure_model(str(model))
+
     def transcribe_song_offline(self, song_id: int, language: str = 'auto') -> dict[str, Any]:
         path = self.store.song_path(int(song_id))
         if not path or not path.is_file():
@@ -119,7 +140,13 @@ class DesktopApi:
         model_path = str(settings.get('offlineLyricsModelPath', '')).strip()
         if not model_path:
             raise ValueError('Choose a local Whisper model first')
-        result = OfflineLyricsEngine().transcribe(path, model_path, language).as_dict()
+        if self.ai.executable.is_file():
+            result = self.ai.run({
+                'action': 'transcribe', 'audio_path': str(path), 'model_path': model_path,
+                'language': language, 'model_root': str(data_dir() / 'ai-models'),
+            })
+        else:
+            result = OfflineLyricsEngine().transcribe(path, model_path, language).as_dict()
         saved = self.store.save_lyrics(int(song_id), {'plain': result['plain'], 'lrc': result['lrc']})
         return result | {'saved': saved}
 

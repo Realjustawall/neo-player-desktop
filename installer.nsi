@@ -17,7 +17,7 @@ Section "Install"
   CreateShortcut "$DESKTOP\NEO Player.lnk" "$INSTDIR\NEOPlayer.exe"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NEOPlayer" "DisplayName" "NEO Player"
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NEOPlayer" "DisplayVersion" "0.3.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NEOPlayer" "DisplayVersion" "0.3.1"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NEOPlayer" "UninstallString" "$\"$INSTDIR\Uninstall.exe$\""
 SectionEnd
 

@@ -14,6 +14,7 @@ Private, offline-first music player for Windows. The desktop app uses React 18 +
 - Five ranked visual themes, light/dark/system/AMOLED modes, custom accents, density and Persian RTL support
 - Local EQ, bass boost, normalization controls, BPM/key/energy analysis and sleep timer
 - Full local backup/restore, cache controls, Windows Media Session integration and no account requirement
+- Optional Lyrics AI engine and multilingual Whisper models downloaded only after first-use consent
 
 ## Run locally
 
@@ -33,12 +34,12 @@ python python/desktop.py --self-test
 python python/desktop.py --ui-smoke
 ```
 
-## Build the Windows executable
+## Build the Windows release
 
 ```powershell
-python -m PyInstaller --noconfirm --clean --onefile --windowed --name "NEO Player" --icon "public/neo-player.ico" --add-data "dist;dist" --hidden-import webview.platforms.edgechromium python/desktop.py
+./scripts/build-windows.ps1
 ```
 
-The executable is written to `dist/NEO Player.exe`. GitHub Actions runs the same build and uploads a tested Windows x64 artifact.
+The release contains a lightweight installer and portable ZIP. Faster Whisper and its native runtime are published as the separate `NEO-Player-Lyrics-AI.zip` asset and are downloaded from inside NEO+ only when the user explicitly approves it. Tiny, Base, Small, and Medium models are also optional one-time downloads and remain available offline afterward.
 
 NEO Player is local-first: music, playlists, preferences, analysis and lyrics stay on the device.

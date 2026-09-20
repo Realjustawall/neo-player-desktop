@@ -4,7 +4,7 @@ datas = [('dist', 'dist'), ('public/neo-mark.svg', 'public')]
 hiddenimports = ['webview.platforms.edgechromium', 'webview.platforms.winforms']
 binaries = []
 
-for package in ('mutagen', 'bottle', 'faster_whisper', 'ctranslate2', 'tokenizers', 'av'):
+for package in ('mutagen', 'bottle'):
     try:
         package_datas, package_binaries, package_hidden = collect_all(package)
         datas += package_datas
@@ -21,7 +21,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    excludes=['tkinter', 'pytest'],
+    excludes=['tkinter', 'pytest', 'faster_whisper', 'ctranslate2', 'tokenizers', 'av'],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
