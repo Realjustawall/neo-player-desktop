@@ -29,6 +29,7 @@ export const api = {
   removeFolder: (path) => request(`/api/folders/${encodeURIComponent(path)}`, { method: 'DELETE' }),
   scan: () => request('/api/scan', { method: 'POST', body: '{}' }),
   scanSystem: () => request('/api/scan-system', { method: 'POST', body: '{}' }),
+  addStream: (url, title = '', artist = '') => request('/api/streams', { method: 'POST', body: JSON.stringify({ url, title, artist }) }),
   favorite: (songId, favorite) => request('/api/favorites', { method: 'POST', body: JSON.stringify({ song_id: songId, favorite }) }),
   hideSong: (songId, hidden) => request('/api/hide', { method: 'POST', body: JSON.stringify({ song_id: songId, hidden }) }),
   pins: () => request('/api/pins'),

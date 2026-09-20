@@ -132,6 +132,25 @@ class DesktopApi:
     def download_offline_lyrics_model(self, model: str = 'small') -> dict[str, Any]:
         return self.ai.ensure_model(str(model))
 
+    def import_audio_from_video(self) -> dict[str, Any] | None:
+        source = self.pick_file(('Video files (*.mp4;*.mkv;*.mov;*.avi;*.webm;*.m4v)', 'All files (*.*)'))
+        if not source:
+            return None
+        if not self.ai.executable.is_file():
+            raise RuntimeError('Install the optional media/AI engine first')
+        source_path = Path(source)
+        output_dir = data_dir() / 'Imported Audio'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        safe = ''.join(c for c in source_path.stem if c not in '<>:"/\\|?*').strip() or 'Extracted audio'
+        output = output_dir / f'{safe}.wav'
+        index = 2
+        while output.exists():
+            output = output_dir / f'{safe} ({index}).wav'; index += 1
+        result = self.ai.run({'action': 'extract-audio', 'video_path': str(source_path), 'output_path': str(output)}, timeout=60 * 60)
+        self.store.add_folder(str(output_dir))
+        scan = self.store.scan(False)
+        return result | {'scan': scan}
+
     def transcribe_song_offline(self, song_id: int, language: str = 'auto') -> dict[str, Any]:
         path = self.store.song_path(int(song_id))
         if not path or not path.is_file():
@@ -177,8 +196,9 @@ class DesktopApi:
 
     def _full_backup_data(self) -> dict[str, Any]:
         data = self.store.backup()
-        data['version'] = 3
+        data['version'] = 4
         with self.store._connect() as db:
+            data['streams'] = [dict(r) for r in db.execute("SELECT title,artist,source_url FROM songs WHERE source_type='stream'")]
             data['playlistSongsByPath'] = [dict(r) for r in db.execute('''SELECT ps.playlist_id,ps.position,ps.hidden,s.path song_path FROM playlist_songs ps JOIN songs s ON s.id=ps.song_id ORDER BY ps.playlist_id,ps.position''')]
             data['lyricsByPath'] = [dict(r) for r in db.execute('''SELECT s.path song_path,l.plain,l.lrc,l.translation,l.romanization,l.updated_at FROM lyrics l JOIN songs s ON s.id=l.song_id''')]
             data['trackProfilesByPath'] = [dict(r) for r in db.execute('''SELECT s.path song_path,tp.* FROM track_profiles tp JOIN songs s ON s.id=tp.song_id''')]
@@ -197,6 +217,9 @@ class DesktopApi:
         for folder in data.get('folders', []):
             try: self.store.add_folder(str(folder))
             except Exception: pass
+        for stream in data.get('streams', []):
+            try: self.store.add_stream(str(stream.get('source_url','')), str(stream.get('title','')), str(stream.get('artist','')))
+            except Exception: pass
         try: self.store.scan(False)
         except Exception: pass
         with self.store._connect() as db:
@@ -213,13 +236,13 @@ class DesktopApi:
                 except Exception: pass
             for row in data.get('playlistFolders', []):
                 try:
-                    db.execute('INSERT INTO playlist_folders(id,parent_id,name,position,pinned,hidden,created_at) VALUES(?,?,?,?,?,?,?)', (
-                        int(row['id']), row.get('parent_id'), row.get('name','Folder'), int(row.get('position',0)), int(row.get('pinned',0)), int(row.get('hidden',0)), int(row.get('created_at',time.time()))))
+                    db.execute('INSERT INTO playlist_folders(id,parent_id,name,position,pinned,hidden,created_at,audio_profile_json) VALUES(?,?,?,?,?,?,?,?)', (
+                        int(row['id']), row.get('parent_id'), row.get('name','Folder'), int(row.get('position',0)), int(row.get('pinned',0)), int(row.get('hidden',0)), int(row.get('created_at',time.time())), row.get('audio_profile_json','')))
                 except Exception: pass
             for row in data.get('playlists', []):
                 try:
-                    db.execute('''INSERT INTO playlists(id,name,created_at,folder_id,pinned,hidden,sort_mode,sort_desc,view_mode) VALUES(?,?,?,?,?,?,?,?,?)''', (
-                        int(row['id']), row.get('name','Playlist'), int(row.get('created_at',time.time())), row.get('folder_id'), int(row.get('pinned',0)), int(row.get('hidden',0)), row.get('sort_mode','custom'), int(row.get('sort_desc',0)), row.get('view_mode','list')))
+                    db.execute('''INSERT INTO playlists(id,name,created_at,folder_id,pinned,hidden,sort_mode,sort_desc,view_mode,audio_profile_json) VALUES(?,?,?,?,?,?,?,?,?,?)''', (
+                        int(row['id']), row.get('name','Playlist'), int(row.get('created_at',time.time())), row.get('folder_id'), int(row.get('pinned',0)), int(row.get('hidden',0)), row.get('sort_mode','custom'), int(row.get('sort_desc',0)), row.get('view_mode','list'), row.get('audio_profile_json','')))
                 except Exception: pass
             path_rows = data.get('playlistSongsByPath', [])
             if path_rows:
@@ -244,6 +267,8 @@ class DesktopApi:
                 if not sid: continue
                 db.execute('''INSERT OR REPLACE INTO track_profiles(song_id,accent,background,secondary,artwork_path,wallpaper_path,wallpaper_opacity,wallpaper_blur,canvas_path,canvas_start,canvas_end,canvas_speed,visualizer,eq_json,bass,virtualizer,loudness) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
                     sid,row.get('accent',''),row.get('background',''),row.get('secondary',''),row.get('artwork_path',''),row.get('wallpaper_path',''),float(row.get('wallpaper_opacity',.28)),int(row.get('wallpaper_blur',18)),row.get('canvas_path',''),float(row.get('canvas_start',0)),float(row.get('canvas_end',0)),float(row.get('canvas_speed',1)),row.get('visualizer',''),row.get('eq_json',''),float(row.get('bass',0)),float(row.get('virtualizer',0)),float(row.get('loudness',0))))
+                db.execute('UPDATE track_profiles SET audio_profile_enabled=? WHERE song_id=?',
+                           (int(row.get('audio_profile_enabled', 0)), sid))
             for index,path in enumerate(data.get('queuePaths', [])):
                 sid=path_to_id.get(str(path))
                 if sid: db.execute('INSERT OR REPLACE INTO queue(position,song_id) VALUES(?,?)',(index,sid))
@@ -295,7 +320,7 @@ def run_self_test() -> int:
         store.patch_settings({'accent':'blue','volume':.5,'language':'fa'}); updated=store.settings(); assert updated['accent']=='blue' and updated['language']=='fa'
         playlist=store.create_playlist('Offline Mix'); assert playlist['name']=='Offline Mix' and store.playlist(playlist['id'])['songs']==[]
         folder=store.create_playlist_folder('Folder'); assert folder['name']=='Folder'; assert isinstance(store.system_roots(),list)
-        backup=desktop._full_backup_data(); assert backup['version']==3 and 'queuePaths' in backup
+        backup=desktop._full_backup_data(); assert backup['version']==4 and 'queuePaths' in backup and 'streams' in backup
     print('NEO_SELF_TEST_OK'); return 0
 
 

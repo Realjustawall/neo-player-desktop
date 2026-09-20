@@ -23,6 +23,8 @@ else { throw "NSIS was not found; installer was not created." }
 # into the main portable archive or installer.
 python -m pip install -r requirements-ai.txt
 python -m PyInstaller --noconfirm --distpath dist-win-ai --workpath build-ai neo_lyrics_ai.spec
+& "dist-win-ai\NEOLyricsAI\NEOLyricsAI.exe" '{"action":"self-test"}'
+if ($LASTEXITCODE -ne 0) { throw "Optional media/AI engine smoke test failed." }
 Compress-Archive -Path "dist-win-ai\NEOLyricsAI\*" -DestinationPath "release\NEO-Player-Lyrics-AI.zip" -Force
 $AiHash = (Get-FileHash "release\NEO-Player-Lyrics-AI.zip" -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -Path "release\NEO-Player-Lyrics-AI.zip.sha256" -Value "$AiHash  NEO-Player-Lyrics-AI.zip" -Encoding ascii

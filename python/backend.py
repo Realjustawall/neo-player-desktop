@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -7,6 +8,7 @@ import re
 import sqlite3
 import threading
 import time
+import urllib.request
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,7 +17,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 from mutagen import File as MutagenFile
 
-AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.opus', '.wma', '.aiff', '.aif', '.ape'}
+AUDIO_EXTENSIONS = {'.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.opus', '.wma', '.aiff', '.aif', '.ape', '.webm'}
 SKIP_DIR_NAMES = {
     '$recycle.bin', 'system volume information', 'windows', 'program files', 'program files (x86)',
     'programdata', 'recovery', 'node_modules', '.git', '.cache', 'appdata'
@@ -27,6 +29,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     'themePreset': 'studio', 'interfaceDensity': 'comfortable',
     'fontFamily': 'vazirmatn', 'fontScale': 1.0, 'customFontName': '', 'dynamicArtwork': True, 'reduceMotion': False,
     'rememberQueue': True, 'resumeLastSong': True, 'lastSongId': 0, 'lastPosition': 0.0, 'minDurationMs': 10_000,
+    'audioExtensions': sorted(AUDIO_EXTENSIONS), 'resumeOnAudioDeviceChange': True,
     'volume': 0.82, 'shuffle': False, 'repeat': 'off', 'playbackRate': 1.0,
     'crossfadeMs': 0, 'gaplessEnabled': True, 'automixEnabled': False, 'advancedAutomixEnabled': True,
     'loudnessNormalization': False, 'normalizationTargetLufs': -14.0, 'normalizationMode': 'smart',
@@ -103,14 +106,15 @@ class NeoStore:
                 CREATE TABLE IF NOT EXISTS playlist_folders(
                     id INTEGER PRIMARY KEY AUTOINCREMENT, parent_id INTEGER REFERENCES playlist_folders(id) ON DELETE CASCADE,
                     name TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, pinned INTEGER NOT NULL DEFAULT 0,
-                    hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL
+                    hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL,
+                    audio_profile_json TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS playlists(
                     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, created_at INTEGER NOT NULL,
                     folder_id INTEGER REFERENCES playlist_folders(id) ON DELETE SET NULL,
                     pinned INTEGER NOT NULL DEFAULT 0, hidden INTEGER NOT NULL DEFAULT 0,
                     sort_mode TEXT NOT NULL DEFAULT 'custom', sort_desc INTEGER NOT NULL DEFAULT 0,
-                    view_mode TEXT NOT NULL DEFAULT 'list'
+                    view_mode TEXT NOT NULL DEFAULT 'list', audio_profile_json TEXT NOT NULL DEFAULT ''
                 );
                 CREATE TABLE IF NOT EXISTS playlist_songs(
                     playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
@@ -155,8 +159,12 @@ class NeoStore:
                 ('skip_count', 'INTEGER NOT NULL DEFAULT 0'), ('last_played', 'INTEGER NOT NULL DEFAULT 0'),
                 ('bpm', 'REAL NOT NULL DEFAULT 0'), ('musical_key', "TEXT NOT NULL DEFAULT ''"),
                 ('mood', "TEXT NOT NULL DEFAULT ''"), ('energy', 'REAL NOT NULL DEFAULT 0'),
+                ('source_type', "TEXT NOT NULL DEFAULT 'file'"), ('source_url', "TEXT NOT NULL DEFAULT ''"),
             ]:
                 self._ensure_column(db, 'songs', name, ddl)
+            self._ensure_column(db, 'playlists', 'audio_profile_json', "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, 'playlist_folders', 'audio_profile_json', "TEXT NOT NULL DEFAULT ''")
+            self._ensure_column(db, 'track_profiles', 'audio_profile_enabled', 'INTEGER NOT NULL DEFAULT 0')
             for key, value in DEFAULT_SETTINGS.items():
                 db.execute('INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)', (key, json.dumps(value, ensure_ascii=False)))
 
@@ -190,6 +198,10 @@ class NeoStore:
         if 'excludedFolders' in sanitized:
             values = sanitized['excludedFolders'] if isinstance(sanitized['excludedFolders'], list) else []
             sanitized['excludedFolders'] = list(dict.fromkeys(str(Path(v).expanduser().resolve()) for v in values if isinstance(v,str) and v.strip()))[:100]
+        if 'audioExtensions' in sanitized:
+            values = sanitized['audioExtensions'] if isinstance(sanitized['audioExtensions'], list) else []
+            normalized = {(str(v).lower() if str(v).startswith('.') else '.' + str(v).lower()) for v in values}
+            sanitized['audioExtensions'] = sorted(normalized & AUDIO_EXTENSIONS)
         with self._connect() as db:
             for key, value in sanitized.items():
                 if key in allowed:
@@ -229,7 +241,10 @@ class NeoStore:
             return [str(Path.home())]
 
     def _walk_audio(self, roots: list[str], scan_all: bool = False):
-        excluded = [os.path.normcase(os.path.abspath(str(p))) for p in self.settings().get('excludedFolders', []) if p]
+        settings = self.settings()
+        excluded = [os.path.normcase(os.path.abspath(str(p))) for p in settings.get('excludedFolders', []) if p]
+        configured = settings.get('audioExtensions')
+        enabled = (set(configured) if isinstance(configured, list) else set(AUDIO_EXTENSIONS)) & AUDIO_EXTENSIONS
         def is_excluded(path: str | os.PathLike[str]) -> bool:
             candidate = os.path.normcase(os.path.abspath(str(path)))
             return any(candidate == item or candidate.startswith(item + os.sep) for item in excluded)
@@ -243,7 +258,7 @@ class NeoStore:
                     dirs[:] = [d for d in dirs if d.lower() not in SKIP_DIR_NAMES and not d.startswith('.')]
                 for name in files:
                     path = Path(base) / name
-                    if path.suffix.lower() in AUDIO_EXTENSIONS:
+                    if path.suffix.lower() in enabled:
                         yield path
 
     def scan(self, scan_all: bool = False) -> dict[str, int]:
@@ -328,8 +343,42 @@ class NeoStore:
             'sampleRate': row['sample_rate'], 'channels': row['channels'], 'fileSize': row['file_size'],
             'hidden': bool(row['hidden']), 'playCount': row['play_count'], 'skipCount': row['skip_count'],
             'lastPlayed': row['last_played'], 'bpm': row['bpm'], 'key': row['musical_key'], 'mood': row['mood'],
-            'energy': row['energy'], 'cover': f"/cover/{row['id']}"
+            'energy': row['energy'], 'sourceType': row['source_type'], 'sourceUrl': row['source_url'],
+            'cover': f"/cover/{row['id']}"
         }
+
+    @staticmethod
+    def _clean_audio_profile(value: Any) -> dict[str, Any]:
+        raw = value if isinstance(value, dict) else {}
+        eq = raw.get('eq') if isinstance(raw.get('eq'), list) else []
+        return {
+            'enabled': bool(raw.get('enabled', False)),
+            'eq': [max(-12.0, min(12.0, float(v))) for v in (eq + [0] * 5)[:5]],
+            'bass': max(0.0, min(100.0, float(raw.get('bass', 0) or 0))),
+            'virtualizer': max(0.0, min(100.0, float(raw.get('virtualizer', 0) or 0))),
+            'loudness': max(-12.0, min(12.0, float(raw.get('loudness', 0) or 0))),
+        }
+
+    def add_stream(self, url: str, title: str = '', artist: str = '') -> dict[str, Any]:
+        parsed = urlparse(str(url).strip())
+        if parsed.scheme not in {'http', 'https'} or not parsed.netloc:
+            raise ValueError('Only HTTP/HTTPS stream URLs are supported')
+        clean_url = parsed.geturl()
+        key = 'stream:' + hashlib.sha256(clean_url.encode('utf-8')).hexdigest()
+        fallback = unquote(Path(parsed.path).stem) or parsed.hostname or 'Online stream'
+        now = int(time.time())
+        with self._connect() as db:
+            db.execute('''INSERT INTO songs(path,title,artist,album,genre,track,duration,added_at,modified_at,last_seen,
+                file_size,source_type,source_url) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(path) DO UPDATE SET title=excluded.title,artist=excluded.artist,source_url=excluded.source_url''',
+                (key, str(title).strip() or fallback, str(artist).strip(), 'Streams', 'Stream', 0, 0, now, now, now, 0, 'stream', clean_url))
+            row = db.execute('SELECT * FROM songs WHERE path=?', (key,)).fetchone()
+        return self._song_dict(row)
+
+    def song_source(self, song_id: int) -> dict[str, Any] | None:
+        with self._connect() as db:
+            row = db.execute('SELECT path,source_type,source_url FROM songs WHERE id=?', (song_id,)).fetchone()
+        return dict(row) if row else None
 
     def library(self, query: str = '', favorite: bool | None = None, include_hidden: bool = False, limit: int = 10000) -> list[dict[str, Any]]:
         sql, args, clauses = 'SELECT * FROM songs', [], []
@@ -350,8 +399,8 @@ class NeoStore:
 
     def song_path(self, song_id: int) -> Path | None:
         with self._connect() as db:
-            row = db.execute('SELECT path FROM songs WHERE id=?', (song_id,)).fetchone()
-            return Path(row['path']) if row else None
+            row = db.execute('SELECT path,source_type FROM songs WHERE id=?', (song_id,)).fetchone()
+            return Path(row['path']) if row and row['source_type'] == 'file' else None
 
     def set_favorite(self, song_id: int, favorite: bool) -> None:
         with self._connect() as db:
@@ -418,7 +467,8 @@ class NeoStore:
     def playlist_folders(self) -> list[dict[str, Any]]:
         with self._connect() as db:
             rows = db.execute('SELECT * FROM playlist_folders ORDER BY pinned DESC,position,name COLLATE NOCASE').fetchall()
-            return [dict(r) | {'pinned': bool(r['pinned']), 'hidden': bool(r['hidden'])} for r in rows]
+            return [dict(r) | {'pinned': bool(r['pinned']), 'hidden': bool(r['hidden']),
+                    'audioProfile': self._clean_audio_profile(_safe_json(r['audio_profile_json'], {}))} for r in rows]
 
     def create_playlist_folder(self, name: str, parent_id: int | None = None) -> dict[str, Any]:
         with self._connect() as db:
@@ -427,11 +477,13 @@ class NeoStore:
         return {'id': fid, 'name': name.strip() or 'New folder', 'parent_id': parent_id, 'position': pos, 'pinned': False, 'hidden': False}
 
     def patch_playlist_folder(self, folder_id: int, patch: dict[str, Any]) -> None:
-        allowed = {'name', 'parent_id', 'position', 'pinned', 'hidden'}
+        allowed = {'name', 'parent_id', 'position', 'pinned', 'hidden', 'audioProfile'}
         sets, args = [], []
         for key, value in patch.items():
             if key in allowed:
-                sets.append(f'{key}=?'); args.append(int(value) if key in {'position','pinned','hidden'} and value is not None else value)
+                column = 'audio_profile_json' if key == 'audioProfile' else key
+                value = json.dumps(self._clean_audio_profile(value)) if key == 'audioProfile' else value
+                sets.append(f'{column}=?'); args.append(int(value) if key in {'position','pinned','hidden'} and value is not None else value)
         if sets:
             with self._connect() as db:
                 db.execute(f"UPDATE playlist_folders SET {','.join(sets)} WHERE id=?", args + [folder_id])
@@ -444,12 +496,13 @@ class NeoStore:
     def playlists(self, include_hidden: bool = False) -> list[dict[str, Any]]:
         with self._connect() as db:
             where = '' if include_hidden else 'WHERE p.hidden=0'
-            rows = db.execute(f'''SELECT p.id,p.name,p.created_at,p.folder_id,p.pinned,p.hidden,p.sort_mode,p.sort_desc,p.view_mode,
+            rows = db.execute(f'''SELECT p.id,p.name,p.created_at,p.folder_id,p.pinned,p.hidden,p.sort_mode,p.sort_desc,p.view_mode,p.audio_profile_json,
                 COUNT(ps.song_id) count FROM playlists p LEFT JOIN playlist_songs ps ON ps.playlist_id=p.id {where}
                 GROUP BY p.id ORDER BY p.pinned DESC,p.created_at DESC''')
             return [{'id': r['id'], 'name': r['name'], 'count': r['count'], 'createdAt': r['created_at'],
                      'folderId': r['folder_id'], 'pinned': bool(r['pinned']), 'hidden': bool(r['hidden']),
-                     'sortMode': r['sort_mode'], 'sortDesc': bool(r['sort_desc']), 'viewMode': r['view_mode']} for r in rows]
+                     'sortMode': r['sort_mode'], 'sortDesc': bool(r['sort_desc']), 'viewMode': r['view_mode'],
+                     'audioProfile': self._clean_audio_profile(_safe_json(r['audio_profile_json'], {}))} for r in rows]
 
     def create_playlist(self, name: str, folder_id: int | None = None) -> dict[str, Any]:
         name = name.strip() or 'New playlist'
@@ -459,12 +512,13 @@ class NeoStore:
 
     def patch_playlist(self, playlist_id: int, patch: dict[str, Any]) -> None:
         mapping = {'folderId': 'folder_id', 'sortMode': 'sort_mode', 'sortDesc': 'sort_desc', 'viewMode': 'view_mode',
-                   'name': 'name', 'pinned': 'pinned', 'hidden': 'hidden'}
+                   'name': 'name', 'pinned': 'pinned', 'hidden': 'hidden', 'audioProfile': 'audio_profile_json'}
         sets, args = [], []
         for key, value in patch.items():
             if key in mapping:
                 column = mapping[key]
                 if key in {'pinned', 'hidden', 'sortDesc'}: value = 1 if value else 0
+                if key == 'audioProfile': value = json.dumps(self._clean_audio_profile(value))
                 sets.append(f'{column}=?'); args.append(value)
         if sets:
             with self._connect() as db:
@@ -483,9 +537,14 @@ class NeoStore:
             if p['sort_desc']: order += ' DESC'
             songs = db.execute(f'''SELECT s.* FROM playlist_songs ps JOIN songs s ON s.id=ps.song_id
                 WHERE ps.playlist_id=? AND ps.hidden=0 AND s.hidden=0 ORDER BY {order}''', (playlist_id,)).fetchall()
+            folder_profile = {}
+            if p['folder_id']:
+                folder = db.execute('SELECT audio_profile_json FROM playlist_folders WHERE id=?', (p['folder_id'],)).fetchone()
+                folder_profile = self._clean_audio_profile(_safe_json(folder['audio_profile_json'], {})) if folder else {}
             return {'id': p['id'], 'name': p['name'], 'folderId': p['folder_id'], 'pinned': bool(p['pinned']),
                     'hidden': bool(p['hidden']), 'sortMode': p['sort_mode'], 'sortDesc': bool(p['sort_desc']),
-                    'viewMode': p['view_mode'], 'songs': [self._song_dict(s) for s in songs]}
+                    'viewMode': p['view_mode'], 'audioProfile': self._clean_audio_profile(_safe_json(p['audio_profile_json'], {})),
+                    'folderAudioProfile': folder_profile, 'songs': [self._song_dict(s) for s in songs]}
 
     def add_playlist_song(self, playlist_id: int, song_id: int) -> None:
         with self._connect() as db:
@@ -524,6 +583,10 @@ class NeoStore:
         playlist = self.create_playlist(name or path.stem)
         with self._connect() as db:
             for entry in entries:
+                if urlparse(entry).scheme in {'http', 'https'}:
+                    song = self.add_stream(entry)
+                    self.add_playlist_song(playlist['id'], int(song['id']))
+                    continue
                 candidate = Path(entry)
                 if not candidate.is_absolute(): candidate = (path.parent / candidate).resolve()
                 row = db.execute('SELECT id FROM songs WHERE path=?', (str(candidate),)).fetchone()
@@ -538,7 +601,7 @@ class NeoStore:
         lines = ['#EXTM3U']
         for song in item['songs']:
             lines.append(f"#EXTINF:{int(song['duration'])},{song['artist']} - {song['title']}")
-            lines.append(song['path'])
+            lines.append(song['sourceUrl'] if song.get('sourceType') == 'stream' else song['path'])
         path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
         return str(path)
 
@@ -609,15 +672,21 @@ class NeoStore:
         if not row:
             return {'songId': song_id, 'accent': '', 'background': '', 'secondary': '', 'artworkPath': '', 'wallpaperPath': '',
                     'wallpaperOpacity': .28, 'wallpaperBlur': 18, 'canvasPath': '', 'canvasStart': 0, 'canvasEnd': 0,
-                    'canvasSpeed': 1, 'visualizer': '', 'eq': [], 'bass': 0, 'virtualizer': 0, 'loudness': 0}
+                    'canvasSpeed': 1, 'visualizer': '', 'audioEnabled': False, 'eq': [], 'bass': 0, 'virtualizer': 0, 'loudness': 0}
         return {'songId': song_id, 'accent': row['accent'], 'background': row['background'], 'secondary': row['secondary'],
                 'artworkPath': row['artwork_path'], 'wallpaperPath': row['wallpaper_path'], 'wallpaperOpacity': row['wallpaper_opacity'],
                 'wallpaperBlur': row['wallpaper_blur'], 'canvasPath': row['canvas_path'], 'canvasStart': row['canvas_start'],
                 'canvasEnd': row['canvas_end'], 'canvasSpeed': row['canvas_speed'], 'visualizer': row['visualizer'],
-                'eq': _safe_json(row['eq_json'], []), 'bass': row['bass'], 'virtualizer': row['virtualizer'], 'loudness': row['loudness']}
+                'audioEnabled': bool(row['audio_profile_enabled']), 'eq': _safe_json(row['eq_json'], []),
+                'bass': row['bass'], 'virtualizer': row['virtualizer'], 'loudness': row['loudness']}
 
     def save_track_profile(self, song_id: int, p: dict[str, Any]) -> dict[str, Any]:
         current = self.track_profile(song_id) | p
+        audio = self._clean_audio_profile({'enabled': current.get('audioEnabled'), 'eq': current.get('eq'),
+                                           'bass': current.get('bass'), 'virtualizer': current.get('virtualizer'),
+                                           'loudness': current.get('loudness')})
+        current.update({'audioEnabled': audio['enabled'], 'eq': audio['eq'], 'bass': audio['bass'],
+                        'virtualizer': audio['virtualizer'], 'loudness': audio['loudness']})
         with self._connect() as db:
             db.execute('''INSERT INTO track_profiles(song_id,accent,background,secondary,artwork_path,wallpaper_path,wallpaper_opacity,
                 wallpaper_blur,canvas_path,canvas_start,canvas_end,canvas_speed,visualizer,eq_json,bass,virtualizer,loudness)
@@ -631,6 +700,8 @@ class NeoStore:
                 current.get('canvasPath',''), float(current.get('canvasStart',0)), float(current.get('canvasEnd',0)), float(current.get('canvasSpeed',1)),
                 current.get('visualizer',''), json.dumps(current.get('eq',[])), float(current.get('bass',0)),
                 float(current.get('virtualizer',0)), float(current.get('loudness',0))))
+            db.execute('UPDATE track_profiles SET audio_profile_enabled=? WHERE song_id=?',
+                       (1 if current.get('audioEnabled') else 0, song_id))
         return self.track_profile(song_id)
 
     def smart_mix(self, seed_id: int | None = None, limit: int = 50, genre: str = '', mood: str = '') -> list[dict[str, Any]]:
@@ -750,7 +821,12 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                     data, mime = cover if cover else (PLACEHOLDER_COVER, 'image/svg+xml')
                     self.send_response(200); self.send_header('Content-Type', mime); self.send_header('Cache-Control','private, max-age=86400'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data); return
                 if len(parts) == 2 and parts[0] == 'media':
-                    path = store.song_path(int(parts[1])); return self.send_error(404) if not path or not path.exists() else self._serve_media(path)
+                    source = store.song_source(int(parts[1]))
+                    if not source: return self.send_error(404)
+                    if source['source_type'] == 'stream':
+                        if store.settings().get('strictOfflineMode'): return self._json({'error':'Streaming is disabled in Strict Offline mode'}, 403)
+                        return self._serve_remote(source['source_url'])
+                    path = Path(source['path']); return self.send_error(404) if not path.exists() else self._serve_media(path)
                 return self._serve_static(parsed.path)
             except Exception as ex: self._json({'error': str(ex)}, 500)
         def do_POST(self) -> None:
@@ -760,6 +836,7 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if self.path == '/api/folders': return self._json({'path': store.add_folder(str(body.get('path','')))}, 201)
                 if self.path == '/api/scan': return self._json(store.scan(False))
                 if self.path == '/api/scan-system': return self._json(store.scan(True))
+                if self.path == '/api/streams': return self._json(store.add_stream(str(body.get('url','')), str(body.get('title','')), str(body.get('artist',''))), 201)
                 if self.path == '/api/favorites': store.set_favorite(int(body['song_id']), bool(body['favorite'])); return self._json({'ok':True})
                 if self.path == '/api/hide': store.set_hidden(int(body['song_id']), bool(body['hidden'])); return self._json({'ok':True})
                 if self.path == '/api/pins': store.set_pin(str(body.get('kind','')),str(body.get('item_key','')),bool(body.get('pinned'))); return self._json({'ok':True})
@@ -817,6 +894,24 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                     chunk = file.read(min(262144, remaining))
                     if not chunk: break
                     self.wfile.write(chunk); remaining -= len(chunk)
+        def _serve_remote(self, url: str) -> None:
+            headers = {'User-Agent': 'NEO-Player/0.4', 'Accept': 'audio/*,*/*;q=.8'}
+            if self.headers.get('Range'): headers['Range'] = self.headers['Range']
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                final = urlparse(response.geturl())
+                if final.scheme not in {'http', 'https'}: raise ValueError('Unsafe stream redirect')
+                status = getattr(response, 'status', 200) or 200
+                self.send_response(status)
+                for key in ('Content-Type', 'Content-Length', 'Content-Range', 'Accept-Ranges', 'Icy-MetaInt'):
+                    value = response.headers.get(key)
+                    if value: self.send_header(key, value)
+                self.send_header('Cache-Control', 'no-store'); self.end_headers()
+                while True:
+                    chunk = response.read(262144)
+                    if not chunk: break
+                    try: self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError): break
         def _serve_static(self, url_path: str) -> None:
             if not root.exists(): return self._json({'error':'frontend not built'}, 503)
             rel = unquote(url_path.lstrip('/')) or 'index.html'; candidate = (root / rel).resolve(); resolved_root = root.resolve()

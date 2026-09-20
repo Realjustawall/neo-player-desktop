@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added configurable scan formats for MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WMA, AIFF, APE, and WebM audio.
+- Added HTTP/HTTPS audio and radio streams with Range-aware local proxying and Strict Offline protection.
+- Added audio extraction from MP4, MKV, MOV, AVI, WebM, and M4V through the optional media engine.
+- Added independent EQ, bass, stereo virtualizer, and loudness profiles for tracks, playlists, and playlist folders.
+- Added Windows audio-output recovery for Bluetooth and wired-headset changes while preserving playback position.
+- Expanded M3U8 sharing/import to preserve stream URLs, and added an About card with version and creator credit.
+
 ## 0.3.1
 
 - Kept the Windows installer lightweight by moving Faster Whisper into an optional NEO Lyrics AI extension.

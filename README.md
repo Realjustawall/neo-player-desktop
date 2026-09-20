@@ -5,12 +5,17 @@ Private, offline-first music player for Windows. The desktop app uses React 18 +
 ## Highlights
 
 - Folder and whole-system audio scanning with duration filters
+- Per-format scanning for MP3, WAV, FLAC, M4A, AAC, OGG, Opus, WMA, AIFF, APE and WebM
 - Local playback, persistent queue, shuffle, repeat, speed, gapless mode and dual-deck crossfade
 - Albums, artists, genres, favorites, history, playlists and nested playlist folders
 - Playlist search, sorting, folder assignment, pinning, M3U/M3U8 import/export and custom ordering
 - Smart local mixes based on favorites, history, skips, artist, genre, BPM and key
 - Synced LRC/plain lyrics, translation, romanization and optional sidecar writing
 - Per-track artwork, wallpaper, Canvas video, visualizer and audio profile
+- Independent track, playlist and playlist-folder EQ, bass, stereo virtualizer and loudness profiles
+- HTTP/HTTPS audio and radio streaming through a Range-aware local proxy
+- Bluetooth/wired-output recovery that preserves playback position when Windows changes devices
+- Optional video-to-WAV extraction for MP4, MKV, MOV, AVI, WebM and M4V
 - Five ranked visual themes, light/dark/system/AMOLED modes, custom accents, density and Persian RTL support
 - Local EQ, bass boost, normalization controls, BPM/key/energy analysis and sleep timer
 - Full local backup/restore, cache controls, Windows Media Session integration and no account requirement
