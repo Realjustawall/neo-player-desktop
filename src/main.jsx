@@ -6,6 +6,7 @@ import FeatureHub from './FeatureHub'
 import './styles.css'
 import './enhancements.css'
 import './featurehub.css'
+import './polish.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
