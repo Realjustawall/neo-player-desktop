@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+from pathlib import Path
 
 _original_connect = sqlite3.connect
 
@@ -74,6 +76,10 @@ def _repair_schema(store):
             store._init_db()
             return
         _add_missing(db, 'songs', SONG_COLUMNS)
+        db.execute('CREATE INDEX IF NOT EXISTS idx_songs_hidden ON songs(hidden)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_songs_added_at ON songs(added_at)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_songs_last_played ON songs(last_played)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_songs_source_type ON songs(source_type)')
         if 'playlists' in tables:
             _add_missing(db, 'playlists', PLAYLIST_COLUMNS)
         if 'playlist_folders' in tables:
@@ -113,7 +119,7 @@ try:
         setattr(api, '_neo_scanner', scanner)
 
         def native_capabilities():
-            return {'nativeCore': True, 'directFilesystem': True, 'parallelScanner': True, 'smartAutoScan': True, 'scanStatus': True, 'schemaRepair': True, 'platform': 'windows'}
+            return {'nativeCore': True, 'directFilesystem': True, 'parallelScanner': True, 'smartAutoScan': True, 'scanStatus': True, 'schemaRepair': True, 'bulkLibraryActions': True, 'platform': 'windows'}
         def scan_library(scan_all=False):
             _repair_schema(store)
             return scanner.scan(bool(scan_all))
@@ -148,8 +154,40 @@ try:
             result = scanner.scan(False)
             result['path'] = path
             return result
+        def native_hide_songs(song_ids, hidden=True):
+            ids = sorted({int(x) for x in (song_ids or []) if str(x).isdigit() or isinstance(x, int)})[:10000]
+            if not ids: return {'updated': 0}
+            marks = ','.join('?' for _ in ids)
+            with store._connect() as db:
+                cur = db.execute(f'UPDATE songs SET hidden=? WHERE id IN ({marks})', [1 if hidden else 0, *ids])
+                return {'updated': int(cur.rowcount if cur.rowcount >= 0 else len(ids))}
+        def native_delete_song_files(song_ids):
+            ids = sorted({int(x) for x in (song_ids or []) if str(x).isdigit() or isinstance(x, int)})[:5000]
+            if not ids: return {'deleted': 0, 'errors': []}
+            marks = ','.join('?' for _ in ids)
+            with store._connect() as db:
+                rows = db.execute(f"SELECT id,path,source_type FROM songs WHERE id IN ({marks})", ids).fetchall()
+            deleted = []
+            errors = []
+            for row in rows:
+                song_id = int(row['id'])
+                if row['source_type'] != 'file':
+                    errors.append({'id': song_id, 'error': 'Not a local file'})
+                    continue
+                path = Path(str(row['path']))
+                try:
+                    if path.exists():
+                        path.unlink()
+                    deleted.append(song_id)
+                except OSError as ex:
+                    errors.append({'id': song_id, 'error': str(ex)})
+            if deleted:
+                marks = ','.join('?' for _ in deleted)
+                with store._connect() as db:
+                    db.execute(f'DELETE FROM songs WHERE id IN ({marks})', deleted)
+            return {'deleted': len(deleted), 'errors': errors}
 
-        for name, fn in {'native_capabilities':native_capabilities,'scan_library':scan_library,'scan_status':scan_status,'auto_scan_music':auto_scan_music,'native_folders':native_folders,'native_system_roots':native_system_roots,'native_add_folder':native_add_folder,'native_remove_folder':native_remove_folder,'native_library':native_library,'native_favorites':native_favorites,'native_history':native_history,'native_stats':native_stats,'native_settings':native_settings,'native_patch_settings':native_patch_settings,'pick_and_scan_folder':pick_and_scan_folder}.items():
+        for name, fn in {'native_capabilities':native_capabilities,'scan_library':scan_library,'scan_status':scan_status,'auto_scan_music':auto_scan_music,'native_folders':native_folders,'native_system_roots':native_system_roots,'native_add_folder':native_add_folder,'native_remove_folder':native_remove_folder,'native_library':native_library,'native_favorites':native_favorites,'native_history':native_history,'native_stats':native_stats,'native_settings':native_settings,'native_patch_settings':native_patch_settings,'pick_and_scan_folder':pick_and_scan_folder,'native_hide_songs':native_hide_songs,'native_delete_song_files':native_delete_song_files}.items():
             setattr(api, name, fn)
 
         try:
