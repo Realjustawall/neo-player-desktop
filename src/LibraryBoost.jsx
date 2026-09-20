@@ -11,9 +11,9 @@ export default function LibraryBoost(){
   const lastIndex=useRef(-1)
   const fa=lang!=='en'
   const ordered=useMemo(()=>{const x=[...songs];if(sort==='title')x.sort((a,b)=>cmp(a.title,b.title));else if(sort==='album')x.sort((a,b)=>cmp(a.album,b.album)||(a.track||0)-(b.track||0));else if(sort==='added')x.sort((a,b)=>(b.addedAt||0)-(a.addedAt||0));else if(sort==='duration')x.sort((a,b)=>(b.duration||0)-(a.duration||0));else x.sort((a,b)=>cmp(a.artist,b.artist)||cmp(a.album,b.album)||(a.track||0)-(b.track||0));return x},[songs,sort])
-  const byId=useMemo(()=>new Map(songs.map(s=>[Number(s.id),s])),[songs])
   const filters=useMemo(()=>({artists:[...new Set(songs.map(s=>s.artist).filter(Boolean))].sort(cmp),albums:[...new Set(songs.map(s=>s.album).filter(Boolean))].sort(cmp),genres:[...new Set(songs.map(s=>s.genre).filter(Boolean))].sort(cmp)}),[songs])
   const visible=useMemo(()=>{const q=norm(query);return ordered.filter(s=>(!artist||s.artist===artist)&&(!album||s.album===album)&&(!genre||s.genre===genre)&&(!q||norm([s.title,s.artist,s.album,s.genre,s.year].join(' ')).includes(q)))},[ordered,query,artist,album,genre])
+  const visibleIds=useMemo(()=>new Set(visible.map(s=>Number(s.id))),[visible])
 
   const load=async()=>{try{const[saved,items]=await Promise.all([api.settings(),api.library()]);setLang(saved.language||'fa');setSongs(items)}catch{}}
   useEffect(()=>{load()},[])
@@ -28,11 +28,11 @@ export default function LibraryBoost(){
         const select=page.querySelector('.section-title .toolbar select')
         if(select?.value&&select.value!==sort)setSort(select.value)
         const rows=[...table.querySelectorAll(':scope > .track-row')]
-        rows.forEach((row,i)=>{const song=ordered[i];if(!song)return;row.dataset.neoSongId=String(song.id);const show=visible.some(v=>v.id===song.id);row.classList.toggle('neo-filter-hidden',!show);row.classList.toggle('neo-selected',selected.has(Number(song.id)));row.querySelectorAll('img').forEach(img=>{img.loading='lazy';img.decoding='async';img.fetchPriority='low'})})
+        rows.forEach((row,i)=>{const song=ordered[i];if(!song)return;const id=Number(song.id);row.dataset.neoSongId=String(id);row.classList.toggle('neo-filter-hidden',!visibleIds.has(id));row.classList.toggle('neo-selected',selected.has(id));row.querySelectorAll('img').forEach(img=>{img.loading='lazy';img.decoding='async';img.fetchPriority='low'})})
       }else{if(target)target.remove();setHost(null)}
     }
     sync();const mo=new MutationObserver(sync);mo.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['class','value']});return()=>mo.disconnect()
-  },[ordered,visible,selected,sort])
+  },[ordered,visibleIds,selected,sort])
 
   useEffect(()=>{
     const click=e=>{const row=e.target.closest('.track-row[data-neo-song-id]');if(!row||e.target.closest('button,input,select,a'))return;const id=Number(row.dataset.neoSongId),rows=[...row.parentElement.querySelectorAll('.track-row[data-neo-song-id]:not(.neo-filter-hidden)')],idx=rows.indexOf(row);setSelected(prev=>{const next=new Set(e.ctrlKey||e.metaKey?prev:[]);if(e.shiftKey&&lastIndex.current>=0){const a=Math.min(lastIndex.current,idx),b=Math.max(lastIndex.current,idx);for(let i=a;i<=b;i++)next.add(Number(rows[i].dataset.neoSongId))}else if(next.has(id)&&(e.ctrlKey||e.metaKey))next.delete(id);else next.add(id);lastIndex.current=idx;return next})}
