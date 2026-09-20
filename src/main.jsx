@@ -9,6 +9,7 @@ import './enhancements.css'
 import './featurehub.css'
 import './polish.css'
 import './immersive.css'
+import './core-settings.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
