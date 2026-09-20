@@ -1,6 +1,6 @@
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
-datas = [('dist', 'dist'), ('public/neo-mark.svg', 'public')]
+datas = [('dist', 'dist'), ('public/neo-mark.svg', 'public'), ('public/neo-player.ico', 'public')]
 hiddenimports = ['webview.platforms.edgechromium', 'webview.platforms.winforms']
 binaries = []
 
@@ -29,6 +29,7 @@ exe = EXE(
     pyz, a.scripts, [], exclude_binaries=True,
     name='NEOPlayer', debug=False, bootloader_ignore_signals=False,
     strip=False, upx=True, console=False,
+    icon='public/neo-player.ico',
 )
 coll = COLLECT(
     exe, a.binaries, a.datas, strip=False, upx=True,
