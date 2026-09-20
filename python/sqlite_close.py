@@ -1,7 +1,5 @@
-import os
+import json
 import sqlite3
-import time
-from concurrent.futures import ThreadPoolExecutor
 
 _original_connect = sqlite3.connect
 
@@ -22,95 +20,132 @@ def _connect(*args, **kwargs):
 sqlite3.connect = _connect
 
 from backend import NeoStore
+from native_scanner import NativeLibraryScanner
 
 
-def _fast_scan(self, scan_all=False):
-    roots = self.system_roots() if scan_all else self.folders()
-    now = int(time.time())
-    minimum = int(self.settings().get('minDurationMs', 10_000)) / 1000.0
-    found = 0
-    updated = 0
-    skipped_short = 0
-    pending = []
-    seen_updates = []
-    delete_ids = []
+def _scanner(store):
+    value = getattr(store, '_neo_store_scanner', None)
+    if value is None:
+        value = NativeLibraryScanner(store)
+        setattr(store, '_neo_store_scanner', value)
+    return value
 
-    with self._connect() as db:
-        existing = {
-            row['path']: {
-                'id': row['id'],
-                'modified_at': int(row['modified_at'] or 0),
-                'duration': float(row['duration'] or 0),
+
+def _native_store_scan(self, scan_all=False):
+    return _scanner(self).scan(bool(scan_all))
+
+
+NeoStore.scan = _native_store_scan
+
+try:
+    import webview
+
+    _create_window = webview.create_window
+
+    def _attach_native_core(api):
+        store = getattr(api, 'store', None)
+        if store is None or getattr(api, '_neo_native_core_ready', False):
+            return api
+        scanner = _scanner(store)
+        setattr(api, '_neo_native_core_ready', True)
+        setattr(api, '_neo_scanner', scanner)
+
+        def native_capabilities():
+            return {
+                'nativeCore': True,
+                'directFilesystem': True,
+                'parallelScanner': True,
+                'smartAutoScan': True,
+                'scanStatus': True,
+                'platform': 'windows',
             }
-            for row in db.execute("SELECT id,path,modified_at,duration FROM songs WHERE source_type='file'")
-        }
 
-    for path in self._walk_audio(roots, scan_all=scan_all):
-        found += 1
-        try:
-            stat = path.stat()
-        except OSError:
-            continue
-        key = str(path)
-        previous = existing.get(key)
-        if previous and previous['modified_at'] == int(stat.st_mtime):
-            if previous['duration'] >= minimum:
-                seen_updates.append((now, previous['id']))
-            else:
-                delete_ids.append((previous['id'],))
-                skipped_short += 1
-            continue
-        pending.append((path, stat, previous))
+        def scan_library(scan_all=False):
+            return scanner.scan(bool(scan_all))
 
-    def read_metadata(item):
-        path, stat, previous = item
+        def scan_status():
+            return scanner.status()
+
+        def auto_scan_music():
+            return scanner.auto_scan()
+
+        def native_folders():
+            return store.folders()
+
+        def native_system_roots():
+            return store.system_roots()
+
+        def native_add_folder(path):
+            return {'path': store.add_folder(str(path))}
+
+        def native_remove_folder(path):
+            store.remove_folder(str(path))
+            return {'ok': True}
+
+        def native_library(query='', include_hidden=False):
+            return store.library(str(query or ''), None, bool(include_hidden))
+
+        def native_favorites():
+            return store.library('', True)
+
+        def native_history(limit=100):
+            return store.history(max(1, min(int(limit), 500)))
+
+        def native_stats():
+            return store.stats()
+
+        def native_settings():
+            return store.settings()
+
+        def native_patch_settings(patch):
+            return store.patch_settings(dict(patch or {}))
+
+        def pick_and_scan_folder():
+            path = api.pick_folder()
+            if not path:
+                return {'cancelled': True, 'native': True}
+            store.add_folder(path)
+            result = scanner.scan(False)
+            result['path'] = path
+            return result
+
+        for name, fn in {
+            'native_capabilities': native_capabilities,
+            'scan_library': scan_library,
+            'scan_status': scan_status,
+            'auto_scan_music': auto_scan_music,
+            'native_folders': native_folders,
+            'native_system_roots': native_system_roots,
+            'native_add_folder': native_add_folder,
+            'native_remove_folder': native_remove_folder,
+            'native_library': native_library,
+            'native_favorites': native_favorites,
+            'native_history': native_history,
+            'native_stats': native_stats,
+            'native_settings': native_settings,
+            'native_patch_settings': native_patch_settings,
+            'pick_and_scan_folder': pick_and_scan_folder,
+        }.items():
+            setattr(api, name, fn)
+
         try:
-            return path, stat, previous, self._metadata(path)
+            with store._connect() as db:
+                marker = db.execute("SELECT value FROM settings WHERE key='native_language_initialized'").fetchone()
+                if marker is None:
+                    current = db.execute("SELECT value FROM settings WHERE key='language'").fetchone()
+                    value = json.loads(current[0]) if current else 'system'
+                    if value == 'system':
+                        db.execute("INSERT INTO settings(key,value) VALUES('language',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (json.dumps('fa'),))
+                    db.execute("INSERT OR REPLACE INTO settings(key,value) VALUES('native_language_initialized','true')")
         except Exception:
-            return path, stat, previous, None
+            pass
+        return api
 
-    workers = max(2, min(16, (os.cpu_count() or 4) * 2))
-    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='neo-scan') as pool:
-        parsed = list(pool.map(read_metadata, pending, chunksize=8))
+    def _native_window(*args, **kwargs):
+        if 'js_api' in kwargs:
+            kwargs['js_api'] = _attach_native_core(kwargs.get('js_api'))
+        return _create_window(*args, **kwargs)
 
-    rows = []
-    for path, stat, previous, meta in parsed:
-        if not meta:
-            continue
-        if float(meta.get('duration') or 0) < minimum:
-            skipped_short += 1
-            if previous:
-                delete_ids.append((previous['id'],))
-            continue
-        rows.append((
-            str(path), meta['title'], meta['artist'], meta['album'], meta['genre'], meta['track'], meta['duration'],
-            now, int(stat.st_mtime), now, meta['year'], meta['disc'], meta['bitrate'], meta['sample_rate'],
-            meta['channels'], int(stat.st_size), meta['bpm'], meta['musical_key'], meta['mood'], meta['energy']
-        ))
-        updated += 1
-
-    with self._connect() as db:
-        if seen_updates:
-            db.executemany('UPDATE songs SET last_seen=? WHERE id=?', seen_updates)
-        if delete_ids:
-            db.executemany('DELETE FROM songs WHERE id=?', delete_ids)
-        if rows:
-            db.executemany('''
-                INSERT INTO songs(path,title,artist,album,genre,track,duration,added_at,modified_at,last_seen,
-                    year,disc,bitrate,sample_rate,channels,file_size,bpm,musical_key,mood,energy)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(path) DO UPDATE SET title=excluded.title,artist=excluded.artist,album=excluded.album,
-                    genre=excluded.genre,track=excluded.track,duration=excluded.duration,modified_at=excluded.modified_at,
-                    last_seen=excluded.last_seen,year=excluded.year,disc=excluded.disc,bitrate=excluded.bitrate,
-                    sample_rate=excluded.sample_rate,channels=excluded.channels,file_size=excluded.file_size,
-                    bpm=excluded.bpm,musical_key=excluded.musical_key,mood=excluded.mood,energy=excluded.energy
-            ''', rows)
-        if roots and not scan_all:
-            clauses = ' OR '.join('path LIKE ?' for _ in roots)
-            args = [now] + [r.rstrip('\\/') + os.sep + '%' for r in roots]
-            db.execute(f'DELETE FROM songs WHERE last_seen<>? AND ({clauses})', args)
-
-    return {'found': found, 'updated': updated, 'skippedShort': skipped_short, 'roots': len(roots)}
-
-
-NeoStore.scan = _fast_scan
+    webview.create_window = _native_window
+except Exception:
+    pass
