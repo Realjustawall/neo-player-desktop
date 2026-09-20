@@ -41,6 +41,30 @@ SONG_COLUMNS = {
     'source_type': "TEXT NOT NULL DEFAULT 'file'",
     'source_url': "TEXT NOT NULL DEFAULT ''",
 }
+PLAYLIST_COLUMNS = {
+    'folder_id': 'INTEGER',
+    'pinned': 'INTEGER NOT NULL DEFAULT 0',
+    'hidden': 'INTEGER NOT NULL DEFAULT 0',
+    'sort_mode': "TEXT NOT NULL DEFAULT 'custom'",
+    'sort_desc': 'INTEGER NOT NULL DEFAULT 0',
+    'view_mode': "TEXT NOT NULL DEFAULT 'list'",
+    'audio_profile_json': "TEXT NOT NULL DEFAULT ''",
+}
+PLAYLIST_FOLDER_COLUMNS = {
+    'parent_id': 'INTEGER',
+    'position': 'INTEGER NOT NULL DEFAULT 0',
+    'pinned': 'INTEGER NOT NULL DEFAULT 0',
+    'hidden': 'INTEGER NOT NULL DEFAULT 0',
+    'created_at': 'INTEGER NOT NULL DEFAULT 0',
+    'audio_profile_json': "TEXT NOT NULL DEFAULT ''",
+}
+
+
+def _add_missing(db, table, columns):
+    names = {row['name'] for row in db.execute(f'PRAGMA table_info({table})')}
+    for name, ddl in columns.items():
+        if name not in names:
+            db.execute(f'ALTER TABLE {table} ADD COLUMN {name} {ddl}')
 
 
 def _repair_schema(store):
@@ -49,19 +73,13 @@ def _repair_schema(store):
         if 'songs' not in tables:
             store._init_db()
             return
-        columns = {row['name'] for row in db.execute('PRAGMA table_info(songs)')}
-        for name, ddl in SONG_COLUMNS.items():
-            if name not in columns:
-                db.execute(f'ALTER TABLE songs ADD COLUMN {name} {ddl}')
-        playlist_columns = {row['name'] for row in db.execute('PRAGMA table_info(playlists)')} if 'playlists' in tables else set()
-        if 'playlists' in tables and 'audio_profile_json' not in playlist_columns:
-            db.execute("ALTER TABLE playlists ADD COLUMN audio_profile_json TEXT NOT NULL DEFAULT ''")
-        folder_columns = {row['name'] for row in db.execute('PRAGMA table_info(playlist_folders)')} if 'playlist_folders' in tables else set()
-        if 'playlist_folders' in tables and 'audio_profile_json' not in folder_columns:
-            db.execute("ALTER TABLE playlist_folders ADD COLUMN audio_profile_json TEXT NOT NULL DEFAULT ''")
-        profile_columns = {row['name'] for row in db.execute('PRAGMA table_info(track_profiles)')} if 'track_profiles' in tables else set()
-        if 'track_profiles' in tables and 'audio_profile_enabled' not in profile_columns:
-            db.execute('ALTER TABLE track_profiles ADD COLUMN audio_profile_enabled INTEGER NOT NULL DEFAULT 0')
+        _add_missing(db, 'songs', SONG_COLUMNS)
+        if 'playlists' in tables:
+            _add_missing(db, 'playlists', PLAYLIST_COLUMNS)
+        if 'playlist_folders' in tables:
+            _add_missing(db, 'playlist_folders', PLAYLIST_FOLDER_COLUMNS)
+        if 'track_profiles' in tables:
+            _add_missing(db, 'track_profiles', {'audio_profile_enabled': 'INTEGER NOT NULL DEFAULT 0'})
 
 
 def _scanner(store):
@@ -95,89 +113,43 @@ try:
         setattr(api, '_neo_scanner', scanner)
 
         def native_capabilities():
-            return {
-                'nativeCore': True,
-                'directFilesystem': True,
-                'parallelScanner': True,
-                'smartAutoScan': True,
-                'scanStatus': True,
-                'schemaRepair': True,
-                'platform': 'windows',
-            }
-
+            return {'nativeCore': True, 'directFilesystem': True, 'parallelScanner': True, 'smartAutoScan': True, 'scanStatus': True, 'schemaRepair': True, 'platform': 'windows'}
         def scan_library(scan_all=False):
             _repair_schema(store)
             return scanner.scan(bool(scan_all))
-
-        def scan_status():
-            return scanner.status()
-
+        def scan_status(): return scanner.status()
         def auto_scan_music():
             _repair_schema(store)
             return scanner.auto_scan()
-
-        def native_folders():
-            return store.folders()
-
-        def native_system_roots():
-            return store.system_roots()
-
-        def native_add_folder(path):
-            return {'path': store.add_folder(str(path))}
-
+        def native_folders(): return store.folders()
+        def native_system_roots(): return store.system_roots()
+        def native_add_folder(path): return {'path': store.add_folder(str(path))}
         def native_remove_folder(path):
-            store.remove_folder(str(path))
-            return {'ok': True}
-
+            store.remove_folder(str(path)); return {'ok': True}
         def native_library(query='', include_hidden=False):
             _repair_schema(store)
             return store.library(str(query or ''), None, bool(include_hidden))
-
         def native_favorites():
             _repair_schema(store)
             return store.library('', True)
-
         def native_history(limit=100):
             _repair_schema(store)
             return store.history(max(1, min(int(limit), 500)))
-
         def native_stats():
             _repair_schema(store)
             return store.stats()
-
-        def native_settings():
-            return store.settings()
-
-        def native_patch_settings(patch):
-            return store.patch_settings(dict(patch or {}))
-
+        def native_settings(): return store.settings()
+        def native_patch_settings(patch): return store.patch_settings(dict(patch or {}))
         def pick_and_scan_folder():
             path = api.pick_folder()
-            if not path:
-                return {'cancelled': True, 'native': True}
+            if not path: return {'cancelled': True, 'native': True}
             _repair_schema(store)
             store.add_folder(path)
             result = scanner.scan(False)
             result['path'] = path
             return result
 
-        for name, fn in {
-            'native_capabilities': native_capabilities,
-            'scan_library': scan_library,
-            'scan_status': scan_status,
-            'auto_scan_music': auto_scan_music,
-            'native_folders': native_folders,
-            'native_system_roots': native_system_roots,
-            'native_add_folder': native_add_folder,
-            'native_remove_folder': native_remove_folder,
-            'native_library': native_library,
-            'native_favorites': native_favorites,
-            'native_history': native_history,
-            'native_stats': native_stats,
-            'native_settings': native_settings,
-            'native_patch_settings': native_patch_settings,
-            'pick_and_scan_folder': pick_and_scan_folder,
-        }.items():
+        for name, fn in {'native_capabilities':native_capabilities,'scan_library':scan_library,'scan_status':scan_status,'auto_scan_music':auto_scan_music,'native_folders':native_folders,'native_system_roots':native_system_roots,'native_add_folder':native_add_folder,'native_remove_folder':native_remove_folder,'native_library':native_library,'native_favorites':native_favorites,'native_history':native_history,'native_stats':native_stats,'native_settings':native_settings,'native_patch_settings':native_patch_settings,'pick_and_scan_folder':pick_and_scan_folder}.items():
             setattr(api, name, fn)
 
         try:
