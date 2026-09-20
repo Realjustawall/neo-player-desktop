@@ -23,7 +23,49 @@ from backend import NeoStore
 from native_scanner import NativeLibraryScanner
 
 
+SONG_COLUMNS = {
+    'year': 'INTEGER NOT NULL DEFAULT 0',
+    'disc': 'INTEGER NOT NULL DEFAULT 0',
+    'bitrate': 'INTEGER NOT NULL DEFAULT 0',
+    'sample_rate': 'INTEGER NOT NULL DEFAULT 0',
+    'channels': 'INTEGER NOT NULL DEFAULT 0',
+    'file_size': 'INTEGER NOT NULL DEFAULT 0',
+    'hidden': 'INTEGER NOT NULL DEFAULT 0',
+    'play_count': 'INTEGER NOT NULL DEFAULT 0',
+    'skip_count': 'INTEGER NOT NULL DEFAULT 0',
+    'last_played': 'INTEGER NOT NULL DEFAULT 0',
+    'bpm': 'REAL NOT NULL DEFAULT 0',
+    'musical_key': "TEXT NOT NULL DEFAULT ''",
+    'mood': "TEXT NOT NULL DEFAULT ''",
+    'energy': 'REAL NOT NULL DEFAULT 0',
+    'source_type': "TEXT NOT NULL DEFAULT 'file'",
+    'source_url': "TEXT NOT NULL DEFAULT ''",
+}
+
+
+def _repair_schema(store):
+    with store._connect() as db:
+        tables = {row['name'] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'songs' not in tables:
+            store._init_db()
+            return
+        columns = {row['name'] for row in db.execute('PRAGMA table_info(songs)')}
+        for name, ddl in SONG_COLUMNS.items():
+            if name not in columns:
+                db.execute(f'ALTER TABLE songs ADD COLUMN {name} {ddl}')
+        playlist_columns = {row['name'] for row in db.execute('PRAGMA table_info(playlists)')} if 'playlists' in tables else set()
+        if 'playlists' in tables and 'audio_profile_json' not in playlist_columns:
+            db.execute("ALTER TABLE playlists ADD COLUMN audio_profile_json TEXT NOT NULL DEFAULT ''")
+        folder_columns = {row['name'] for row in db.execute('PRAGMA table_info(playlist_folders)')} if 'playlist_folders' in tables else set()
+        if 'playlist_folders' in tables and 'audio_profile_json' not in folder_columns:
+            db.execute("ALTER TABLE playlist_folders ADD COLUMN audio_profile_json TEXT NOT NULL DEFAULT ''")
+        profile_columns = {row['name'] for row in db.execute('PRAGMA table_info(track_profiles)')} if 'track_profiles' in tables else set()
+        if 'track_profiles' in tables and 'audio_profile_enabled' not in profile_columns:
+            db.execute('ALTER TABLE track_profiles ADD COLUMN audio_profile_enabled INTEGER NOT NULL DEFAULT 0')
+
+
 def _scanner(store):
+    _repair_schema(store)
     value = getattr(store, '_neo_store_scanner', None)
     if value is None:
         value = NativeLibraryScanner(store)
@@ -32,6 +74,7 @@ def _scanner(store):
 
 
 def _native_store_scan(self, scan_all=False):
+    _repair_schema(self)
     return _scanner(self).scan(bool(scan_all))
 
 
@@ -46,6 +89,7 @@ try:
         store = getattr(api, 'store', None)
         if store is None or getattr(api, '_neo_native_core_ready', False):
             return api
+        _repair_schema(store)
         scanner = _scanner(store)
         setattr(api, '_neo_native_core_ready', True)
         setattr(api, '_neo_scanner', scanner)
@@ -57,16 +101,19 @@ try:
                 'parallelScanner': True,
                 'smartAutoScan': True,
                 'scanStatus': True,
+                'schemaRepair': True,
                 'platform': 'windows',
             }
 
         def scan_library(scan_all=False):
+            _repair_schema(store)
             return scanner.scan(bool(scan_all))
 
         def scan_status():
             return scanner.status()
 
         def auto_scan_music():
+            _repair_schema(store)
             return scanner.auto_scan()
 
         def native_folders():
@@ -83,15 +130,19 @@ try:
             return {'ok': True}
 
         def native_library(query='', include_hidden=False):
+            _repair_schema(store)
             return store.library(str(query or ''), None, bool(include_hidden))
 
         def native_favorites():
+            _repair_schema(store)
             return store.library('', True)
 
         def native_history(limit=100):
+            _repair_schema(store)
             return store.history(max(1, min(int(limit), 500)))
 
         def native_stats():
+            _repair_schema(store)
             return store.stats()
 
         def native_settings():
@@ -104,6 +155,7 @@ try:
             path = api.pick_folder()
             if not path:
                 return {'cancelled': True, 'native': True}
+            _repair_schema(store)
             store.add_folder(path)
             result = scanner.scan(False)
             result['path'] = path
