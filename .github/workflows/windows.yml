@@ -54,7 +54,7 @@ jobs:
       - name: Build self-contained EXE
         shell: pwsh
         run: |
-          pyinstaller --noconfirm --clean --onefile --windowed --name "NEO Player" --add-data "dist;dist" --hidden-import webview.platforms.edgechromium python/desktop.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name "NEO Player" --icon "public/neo-player.ico" --add-data "dist;dist" --hidden-import webview.platforms.edgechromium python/desktop.py
           if (!(Test-Path "dist/NEO Player.exe")) { throw "EXE was not created" }
 
       - name: Packaged EXE self-test

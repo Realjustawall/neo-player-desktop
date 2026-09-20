@@ -20,9 +20,11 @@ SKIP_DIR_NAMES = {
     '$recycle.bin', 'system volume information', 'windows', 'program files', 'program files (x86)',
     'programdata', 'recovery', 'node_modules', '.git', '.cache', 'appdata'
 }
+PLACEHOLDER_COVER = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x2="1" y2="1"><stop stop-color="#292929"/><stop offset="1" stop-color="#101010"/></linearGradient><linearGradient id="a" x2="1"><stop stop-color="#ff9a45"/><stop offset="1" stop-color="#ff6517"/></linearGradient></defs><rect width="512" height="512" rx="42" fill="url(#g)"/><path d="M132 338V174c0-24 30-34 45-15l158 198c15 19 45 8 45-16V174" fill="none" stroke="url(#a)" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/><circle cx="132" cy="374" r="34" fill="#ff7a1a"/><circle cx="380" cy="138" r="34" fill="#ff7a1a"/></svg>'''
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     'themeMode': 'dark', 'accent': 'orange', 'customColor': '#ff7a1a', 'language': 'system',
+    'themePreset': 'studio', 'interfaceDensity': 'comfortable',
     'fontFamily': 'vazirmatn', 'fontScale': 1.0, 'dynamicArtwork': True, 'reduceMotion': False,
     'rememberQueue': True, 'resumeLastSong': True, 'minDurationMs': 10_000,
     'volume': 0.82, 'shuffle': False, 'repeat': 'off', 'playbackRate': 1.0,
@@ -135,6 +137,9 @@ class NeoStore:
                 CREATE TABLE IF NOT EXISTS recommendation_feedback(
                     song_id INTEGER PRIMARY KEY REFERENCES songs(id) ON DELETE CASCADE,
                     liked REAL NOT NULL DEFAULT 0, skipped REAL NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE TABLE IF NOT EXISTS recent_searches(
+                    query TEXT PRIMARY KEY COLLATE NOCASE, searched_at INTEGER NOT NULL
                 );
             ''')
             for name, ddl in [
@@ -355,6 +360,28 @@ class NeoStore:
                     'favorites': db.execute('SELECT COUNT(*) FROM songs WHERE favorite=1 AND hidden=0').fetchone()[0],
                     'playlists': db.execute('SELECT COUNT(*) FROM playlists WHERE hidden=0').fetchone()[0]}
 
+    def recent_searches(self, limit: int = 8) -> list[str]:
+        with self._connect() as db:
+            return [r['query'] for r in db.execute(
+                'SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT ?',
+                (max(1, min(int(limit), 30)),),
+            )]
+
+    def add_recent_search(self, query: str) -> list[str]:
+        clean = ' '.join(str(query).strip().split())[:160]
+        if clean:
+            with self._connect() as db:
+                db.execute('INSERT INTO recent_searches(query,searched_at) VALUES(?,?) '
+                           'ON CONFLICT(query) DO UPDATE SET searched_at=excluded.searched_at',
+                           (clean, time.time_ns()))
+                db.execute('DELETE FROM recent_searches WHERE query NOT IN '
+                           '(SELECT query FROM recent_searches ORDER BY searched_at DESC LIMIT 30)')
+        return self.recent_searches()
+
+    def clear_recent_searches(self) -> None:
+        with self._connect() as db:
+            db.execute('DELETE FROM recent_searches')
+
     def playlist_folders(self) -> list[dict[str, Any]]:
         with self._connect() as db:
             rows = db.execute('SELECT * FROM playlist_folders ORDER BY pinned DESC,position,name COLLATE NOCASE').fetchall()
@@ -439,6 +466,20 @@ class NeoStore:
             for i, row in enumerate(rows):
                 db.execute('UPDATE playlist_songs SET position=? WHERE playlist_id=? AND song_id=?', (i, playlist_id, row['song_id']))
 
+    def reorder_playlist(self, playlist_id: int, song_ids: list[int]) -> None:
+        with self._connect() as db:
+            known = {int(r['song_id']) for r in db.execute(
+                'SELECT song_id FROM playlist_songs WHERE playlist_id=?', (playlist_id,))}
+            ordered: list[int] = []
+            for value in song_ids:
+                song_id = int(value)
+                if song_id in known and song_id not in ordered:
+                    ordered.append(song_id)
+            ordered.extend(song_id for song_id in known if song_id not in ordered)
+            for position, song_id in enumerate(ordered):
+                db.execute('UPDATE playlist_songs SET position=? WHERE playlist_id=? AND song_id=?',
+                           (position, playlist_id, song_id))
+
     def delete_playlist(self, playlist_id: int) -> None:
         with self._connect() as db:
             db.execute('DELETE FROM playlists WHERE id=?', (playlist_id,))
@@ -475,7 +516,28 @@ class NeoStore:
     def set_queue(self, song_ids: list[int]) -> None:
         with self._connect() as db:
             db.execute('DELETE FROM queue')
-            db.executemany('INSERT INTO queue(position,song_id) VALUES(?,?)', [(i, int(sid)) for i, sid in enumerate(song_ids)])
+            valid = {int(r['id']) for r in db.execute('SELECT id FROM songs WHERE hidden=0')}
+            filtered = [int(sid) for sid in song_ids if int(sid) in valid]
+            db.executemany('INSERT INTO queue(position,song_id) VALUES(?,?)', [(i, sid) for i, sid in enumerate(filtered)])
+
+    def cache_status(self) -> dict[str, int]:
+        cache_dir = self.data_dir / 'cache'
+        files = [p for p in cache_dir.rglob('*') if p.is_file()] if cache_dir.exists() else []
+        return {'files': len(files), 'bytes': sum(p.stat().st_size for p in files)}
+
+    def clear_cache(self) -> dict[str, int]:
+        cache_dir = self.data_dir / 'cache'
+        removed = 0
+        if cache_dir.exists():
+            for path in sorted(cache_dir.rglob('*'), key=lambda p: len(p.parts), reverse=True):
+                try:
+                    if path.is_file():
+                        path.unlink(); removed += 1
+                    elif path.is_dir():
+                        path.rmdir()
+                except OSError:
+                    pass
+        return {'removed': removed, **self.cache_status()}
 
     def lyrics(self, song_id: int) -> dict[str, Any]:
         with self._connect() as db:
@@ -630,6 +692,8 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if parsed.path == '/api/favorites': return self._json(store.library('', True))
                 if parsed.path == '/api/history': return self._json(store.history(int(qs.get('limit',['100'])[0])))
                 if parsed.path == '/api/stats': return self._json(store.stats())
+                if parsed.path == '/api/recent-searches': return self._json(store.recent_searches(int(qs.get('limit',['8'])[0])))
+                if parsed.path == '/api/cache': return self._json(store.cache_status())
                 if parsed.path == '/api/folders': return self._json(store.folders())
                 if parsed.path == '/api/system-roots': return self._json(store.system_roots())
                 if parsed.path == '/api/playlists': return self._json(store.playlists(qs.get('hidden',['0'])[0] == '1'))
@@ -644,8 +708,8 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if len(parts) == 3 and parts[:2] == ['api','profiles']: return self._json(store.track_profile(int(parts[2])))
                 if len(parts) == 2 and parts[0] == 'cover':
                     cover = store.cover(int(parts[1]))
-                    if not cover: return self.send_error(404)
-                    data, mime = cover; self.send_response(200); self.send_header('Content-Type', mime); self.send_header('Cache-Control','private, max-age=86400'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data); return
+                    data, mime = cover if cover else (PLACEHOLDER_COVER, 'image/svg+xml')
+                    self.send_response(200); self.send_header('Content-Type', mime); self.send_header('Cache-Control','private, max-age=86400'); self.send_header('Content-Length', str(len(data))); self.end_headers(); self.wfile.write(data); return
                 if len(parts) == 2 and parts[0] == 'media':
                     path = store.song_path(int(parts[1])); return self.send_error(404) if not path or not path.exists() else self._serve_media(path)
                 return self._serve_static(parsed.path)
@@ -663,6 +727,8 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if self.path == '/api/playlist-folders': return self._json(store.create_playlist_folder(str(body.get('name','')), body.get('parent_id')), 201)
                 if len(parts) == 4 and parts[:2] == ['api','playlists'] and parts[3] == 'songs': store.add_playlist_song(int(parts[2]), int(body['song_id'])); return self._json({'ok':True})
                 if self.path == '/api/history': store.add_history(int(body['song_id']), bool(body.get('skipped',False))); return self._json({'ok':True})
+                if self.path == '/api/recent-searches': return self._json(store.add_recent_search(str(body.get('query',''))), 201)
+                if self.path == '/api/cache/clear': return self._json(store.clear_cache())
                 if self.path == '/api/import-m3u8': return self._json(store.import_m3u8(str(body['path']), body.get('name')), 201)
                 if self.path == '/api/export-m3u8': return self._json({'path': store.export_m3u8(int(body['playlist_id']), str(body['path']))})
                 if self.path == '/api/restore': return self._json(store.restore(body))
@@ -682,6 +748,9 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
         def do_PUT(self) -> None:
             try:
                 if self.path == '/api/queue': store.set_queue([int(x) for x in self._read_json().get('song_ids',[])]); return self._json({'ok':True})
+                parts = self._parts()
+                if len(parts) == 4 and parts[:2] == ['api','playlists'] and parts[3] == 'reorder':
+                    body = self._read_json(); store.reorder_playlist(int(parts[2]), body.get('song_ids', [])); return self._json({'ok':True})
                 return self._json({'error':'not found'}, 404)
             except Exception as ex: self._json({'error': str(ex)}, 400)
         def do_DELETE(self) -> None:
@@ -691,6 +760,7 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if len(parts) == 3 and parts[:2] == ['api','playlists']: store.delete_playlist(int(parts[2])); return self._json({'ok':True})
                 if len(parts) == 3 and parts[:2] == ['api','playlist-folders']: store.delete_playlist_folder(int(parts[2])); return self._json({'ok':True})
                 if len(parts) == 5 and parts[:2] == ['api','playlists'] and parts[3] == 'songs': store.remove_playlist_song(int(parts[2]), int(parts[4])); return self._json({'ok':True})
+                if self.path == '/api/recent-searches': store.clear_recent_searches(); return self._json({'ok':True})
                 return self._json({'error':'not found'}, 404)
             except Exception as ex: self._json({'error': str(ex)}, 400)
         def _serve_media(self, path: Path) -> None:

@@ -55,7 +55,29 @@ class BackendTests(unittest.TestCase):
                     self.assertIn('minDurationMs', json.loads(response.read()))
                 request = urllib.request.Request(server.url + f"/media/{song['id']}", headers={'Range':'bytes=0-31'})
                 with urllib.request.urlopen(request) as response: self.assertEqual(206, response.status); self.assertEqual(32, len(response.read()))
+                with urllib.request.urlopen(server.url + f"/cover/{song['id']}") as response:
+                    self.assertEqual('image/svg+xml', response.headers.get_content_type()); self.assertIn(b'<svg', response.read())
             finally: server.stop()
+
+    def test_recent_search_queue_validation_playlist_reorder_and_cache(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); music = root / 'Music'; music.mkdir()
+            self.make_wav(music / 'A.wav'); self.make_wav(music / 'B.wav')
+            store = NeoStore(root / 'data'); store.patch_settings({'minDurationMs': 0, 'themePreset': 'aurora'})
+            store.add_folder(str(music)); store.scan(); songs = store.library()
+            self.assertEqual('aurora', store.settings()['themePreset'])
+            self.assertEqual(['Neo Mix'], store.add_recent_search('  Neo   Mix  '))
+            store.add_recent_search('Persian'); self.assertEqual(['Persian', 'Neo Mix'], store.recent_searches())
+            store.clear_recent_searches(); self.assertEqual([], store.recent_searches())
+            store.set_queue([songs[0]['id'], 999999, songs[1]['id']])
+            self.assertEqual([songs[0]['id'], songs[1]['id']], [s['id'] for s in store.queue()])
+            playlist = store.create_playlist('Order')
+            for song in songs: store.add_playlist_song(playlist['id'], song['id'])
+            store.reorder_playlist(playlist['id'], [songs[1]['id'], songs[0]['id']])
+            self.assertEqual([songs[1]['id'], songs[0]['id']], [s['id'] for s in store.playlist(playlist['id'])['songs']])
+            cache = root / 'data' / 'cache'; cache.mkdir(); (cache / 'art.tmp').write_bytes(b'1234')
+            self.assertEqual({'files': 1, 'bytes': 4}, store.cache_status())
+            self.assertEqual(1, store.clear_cache()['removed']); self.assertEqual(0, store.cache_status()['files'])
 
 
 if __name__ == '__main__': unittest.main()
