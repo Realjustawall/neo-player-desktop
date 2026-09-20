@@ -38,6 +38,27 @@ class DesktopApi:
         except Exception:
             return None
 
+    def pick_file(self, extensions: tuple[str, ...] | None = None) -> str | None:
+        try:
+            result = webview.windows[0].create_file_dialog(webview.FileDialog.OPEN)
+            if not result:
+                return None
+            value = result[0] if isinstance(result, (list, tuple)) else str(result)
+            if extensions and Path(value).suffix.lower() not in {x.lower() for x in extensions}:
+                return None
+            return value
+        except Exception:
+            return None
+
+    def save_file(self, filename: str = 'NEO-Backup.json') -> str | None:
+        try:
+            result = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=filename)
+            if not result:
+                return None
+            return result[0] if isinstance(result, (list, tuple)) else str(result)
+        except Exception:
+            return None
+
     def minimize(self) -> None:
         if webview.windows:
             webview.windows[0].minimize()
@@ -51,12 +72,19 @@ def run_self_test() -> int:
     with tempfile.TemporaryDirectory(prefix='neo-player-test-') as tmp:
         store = NeoStore(tmp)
         defaults = store.settings()
-        assert defaults['theme'] == 'tangerine'
-        store.patch_settings({'theme': 'amber', 'volume': 0.5})
-        assert store.settings()['theme'] == 'amber'
+        assert defaults['accent'] == 'orange'
+        assert defaults['themeMode'] == 'dark'
+        assert defaults['minDurationMs'] == 10_000
+        store.patch_settings({'accent': 'blue', 'volume': 0.5, 'language': 'fa'})
+        updated = store.settings()
+        assert updated['accent'] == 'blue'
+        assert updated['language'] == 'fa'
         playlist = store.create_playlist('Offline Mix')
         assert playlist['name'] == 'Offline Mix'
         assert store.playlist(playlist['id'])['songs'] == []
+        folder = store.create_playlist_folder('Folder')
+        assert folder['name'] == 'Folder'
+        assert isinstance(store.system_roots(), list)
     print('NEO_SELF_TEST_OK')
     return 0
 
@@ -65,7 +93,7 @@ def run_ui_smoke() -> int:
     with tempfile.TemporaryDirectory(prefix='neo-player-ui-') as tmp:
         store = NeoStore(tmp)
         server = create_server(store, resource_path('dist'))
-        state = {'ok': False, 'error': 'React UI did not render'}
+        rendered = {'ok': False}
         try:
             with urllib.request.urlopen(server.url + '/api/health', timeout=5) as response:
                 payload = response.read().decode('utf-8')
@@ -73,39 +101,21 @@ def run_ui_smoke() -> int:
             with urllib.request.urlopen(server.url + '/', timeout=5) as response:
                 html = response.read().decode('utf-8')
                 assert '<div id="root"></div>' in html
-
-            window = webview.create_window(
-                APP_NAME,
-                server.url,
-                width=1180,
-                height=760,
-                min_size=(900, 600),
-                js_api=DesktopApi(),
-                background_color='#0b0b0b',
-            )
-
-            def verify_render(target):
-                deadline = time.time() + 12
-                last_error = None
+            window = webview.create_window(APP_NAME, server.url, width=1180, height=760, min_size=(900, 600), js_api=DesktopApi())
+            def verify_after_start():
+                deadline = time.time() + 6
                 while time.time() < deadline:
                     try:
-                        rendered = target.evaluate_js("Boolean(document.querySelector('.app-shell') && document.body.innerText.includes('NEO'))")
-                        if rendered:
-                            state['ok'] = True
-                            state['error'] = ''
-                            print('NEO_UI_RENDER_OK')
-                            target.destroy()
-                            return
-                    except Exception as ex:
-                        last_error = ex
-                    time.sleep(0.25)
-                if last_error is not None:
-                    state['error'] = f'React DOM verification failed: {last_error}'
-                target.destroy()
-
-            webview.start(verify_render, window, gui='edgechromium')
-            if not state['ok']:
-                raise RuntimeError(state['error'])
+                        value = window.evaluate_js("Boolean(document.querySelector('.app-shell')) && document.body.innerText.includes('NEO PLAYER')")
+                        if value:
+                            rendered['ok'] = True
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(.25)
+                window.destroy()
+            webview.start(verify_after_start, gui='edgechromium')
+            assert rendered['ok'], 'React DOM did not render in packaged WebView2'
         finally:
             server.stop()
     print('NEO_UI_SMOKE_OK')
@@ -116,15 +126,7 @@ def run_app() -> int:
     store = NeoStore(data_dir())
     server = create_server(store, resource_path('dist'))
     try:
-        webview.create_window(
-            APP_NAME,
-            server.url,
-            width=1280,
-            height=820,
-            min_size=(920, 620),
-            js_api=DesktopApi(),
-            background_color='#0b0b0b',
-        )
+        webview.create_window(APP_NAME, server.url, width=1360, height=860, min_size=(960, 640), js_api=DesktopApi(), background_color='#0b0b0b')
         webview.start(gui='edgechromium')
         return 0
     finally:
