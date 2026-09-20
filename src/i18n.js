@@ -40,8 +40,8 @@ export const messages = {
 }
 
 export function resolveLanguage(value) {
-  if (value === 'fa' || value === 'en') return value
-  return (navigator.language || '').toLowerCase().startsWith('fa') ? 'fa' : 'en'
+  if (value === 'en') return 'en'
+  return 'fa'
 }
 
 export function translator(language) {
