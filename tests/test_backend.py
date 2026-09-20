@@ -30,6 +30,15 @@ class BackendTests(unittest.TestCase):
             store.add_history(song['id']); self.assertEqual(song['id'], store.history()[0]['id'])
             self.assertEqual(1, store.stats()['songs'])
 
+    def test_excluded_folder_is_not_scanned(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp); music = root / 'Music'; blocked = music / 'Private'; blocked.mkdir(parents=True)
+            self.make_wav(music / 'Keep.wav', .2); self.make_wav(blocked / 'Skip.wav', .2)
+            store = NeoStore(root / 'data'); store.add_folder(str(music))
+            store.patch_settings({'minDurationMs': 0, 'excludedFolders': [str(blocked)]})
+            result = store.scan(); self.assertEqual(1, result['found'])
+            self.assertEqual(['Keep'], [song['title'] for song in store.library()])
+
     def test_playlist_folders_lyrics_profiles_backup_and_queue(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); music = root / 'Music'; music.mkdir(); self.make_wav(music / 'Demo.wav')
@@ -42,6 +51,8 @@ class BackendTests(unittest.TestCase):
             profile = store.save_track_profile(song['id'], {'accent': '#45D483', 'visualizer': 'waveform'}); self.assertEqual('waveform', profile['visualizer'])
             mix = store.smart_mix(None, 10); self.assertTrue(isinstance(mix, list))
             backup = store.backup(); self.assertEqual(2, backup['version']); self.assertIn('settings', backup)
+            store.set_pin('album', 'Offline Album', True); self.assertEqual('Offline Album', store.pins()[0]['itemKey'])
+            self.assertEqual('Offline Album', store.backup()['pins'][0]['item_key'])
 
     def test_http_health_media_and_new_endpoints(self):
         with tempfile.TemporaryDirectory() as tmp:

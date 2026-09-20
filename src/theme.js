@@ -39,13 +39,15 @@ export function applyAppearance(settings, profile = null, language = 'en') {
   const mode = settings.themeMode || 'dark'
   const accent = effectiveAccent(settings, profile)
   const font = FONT_OPTIONS.find(x => x.id === settings.fontFamily) || FONT_OPTIONS[0]
+  const fontCss = settings.fontFamily === 'installed' && settings.customFontName
+    ? `"${String(settings.customFontName).replaceAll('"','')}", ${FONT_OPTIONS[0].css}` : font.css
   root.dataset.mode = mode
   root.dataset.preset = settings.themePreset || 'studio'
   root.dataset.density = settings.interfaceDensity || 'comfortable'
   root.dataset.accent = settings.accent || 'orange'
   root.style.setProperty('--accent', accent)
   root.style.setProperty('--accent-rgb', hexToRgbTriplet(accent))
-  root.style.setProperty('--font-family', font.css)
+  root.style.setProperty('--font-family', fontCss)
   root.style.setProperty('--font-scale', String(settings.fontScale || 1))
   root.dir = language === 'fa' ? 'rtl' : 'ltr'
   root.lang = language

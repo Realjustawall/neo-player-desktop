@@ -17,3 +17,5 @@
 [dir="rtl"] .toggle-row input:checked+i:after{left:auto;right:23px}
 ::selection{background:rgb(var(--accent-rgb)/.35)}
 *{scrollbar-width:thin;scrollbar-color:color-mix(in srgb,var(--accent) 55%,transparent) transparent}
+.neo-plus-tabs{grid-template-columns:repeat(5,1fr)}
+.model-path{padding:10px 12px;margin:10px 0;border-radius:9px;background:var(--surface3);color:var(--muted);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:ltr;text-align:left}

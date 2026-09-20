@@ -15,6 +15,7 @@ from typing import Any
 import webview
 import sqlite_close  # noqa: F401 - deterministic SQLite close on Windows
 from backend import NeoStore, create_server
+from offline_lyrics import OfflineLyricsEngine
 
 APP_NAME = 'NEO Player'
 
@@ -76,6 +77,52 @@ class DesktopApi:
     def toggle_fullscreen(self) -> None:
         if self._window(): self._window().toggle_fullscreen()
 
+    def installed_fonts(self) -> list[str]:
+        """Return locally installed font family names without any network lookup."""
+        names: set[str] = set()
+        if os.name == 'nt':
+            try:
+                import winreg
+                keys = [
+                    (winreg.HKEY_LOCAL_MACHINE, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'),
+                    (winreg.HKEY_CURRENT_USER, r'SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'),
+                ]
+                for hive, path in keys:
+                    try:
+                        with winreg.OpenKey(hive, path) as key:
+                            for index in range(winreg.QueryInfoKey(key)[1]):
+                                label = winreg.EnumValue(key, index)[0]
+                                family = label.rsplit(' (', 1)[0].strip()
+                                if family: names.add(family)
+                    except OSError:
+                        continue
+            except Exception:
+                pass
+        return sorted(names, key=str.casefold)
+
+    def choose_offline_lyrics_model(self) -> str | None:
+        path = self.pick_folder()
+        if not path:
+            return None
+        model = Path(path)
+        markers = {'model.bin', 'config.json', 'tokenizer.json'}
+        if not any((model / marker).exists() for marker in markers):
+            raise ValueError('The selected folder is not a compatible local Whisper model')
+        self.store.patch_settings({'offlineLyricsModelPath': str(model.resolve())})
+        return str(model.resolve())
+
+    def transcribe_song_offline(self, song_id: int, language: str = 'auto') -> dict[str, Any]:
+        path = self.store.song_path(int(song_id))
+        if not path or not path.is_file():
+            raise ValueError('Song file was not found')
+        settings = self.store.settings()
+        model_path = str(settings.get('offlineLyricsModelPath', '')).strip()
+        if not model_path:
+            raise ValueError('Choose a local Whisper model first')
+        result = OfflineLyricsEngine().transcribe(path, model_path, language).as_dict()
+        saved = self.store.save_lyrics(int(song_id), {'plain': result['plain'], 'lrc': result['lrc']})
+        return result | {'saved': saved}
+
     def reveal_song(self, song_id: int) -> bool:
         path = self.store.song_path(int(song_id))
         if not path or not path.exists(): return False
@@ -133,6 +180,10 @@ class DesktopApi:
             db.execute('DELETE FROM playlist_folders')
             db.execute('DELETE FROM lyrics')
             db.execute('DELETE FROM track_profiles')
+            db.execute('DELETE FROM pins')
+            for row in data.get('pins', []):
+                try: db.execute('INSERT OR IGNORE INTO pins(kind,item_key,position,created_at) VALUES(?,?,?,?)', (row['kind'],row['item_key'],int(row.get('position',0)),int(row.get('created_at',time.time()))))
+                except Exception: pass
             for row in data.get('playlistFolders', []):
                 try:
                     db.execute('INSERT INTO playlist_folders(id,parent_id,name,position,pinned,hidden,created_at) VALUES(?,?,?,?,?,?,?)', (

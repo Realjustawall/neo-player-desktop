@@ -31,6 +31,8 @@ export const api = {
   scanSystem: () => request('/api/scan-system', { method: 'POST', body: '{}' }),
   favorite: (songId, favorite) => request('/api/favorites', { method: 'POST', body: JSON.stringify({ song_id: songId, favorite }) }),
   hideSong: (songId, hidden) => request('/api/hide', { method: 'POST', body: JSON.stringify({ song_id: songId, hidden }) }),
+  pins: () => request('/api/pins'),
+  setPin: (kind, itemKey, pinned) => request('/api/pins', { method: 'POST', body: JSON.stringify({ kind, item_key: itemKey, pinned }) }),
   playlists: (includeHidden = false) => request(`/api/playlists?hidden=${includeHidden ? 1 : 0}`),
   playlist: (id) => request(`/api/playlists/${id}`),
   createPlaylist: (name, folderId = null) => request('/api/playlists', { method: 'POST', body: JSON.stringify({ name, folder_id: folderId }) }),

@@ -25,14 +25,15 @@ PLACEHOLDER_COVER = b'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512
 DEFAULT_SETTINGS: dict[str, Any] = {
     'themeMode': 'dark', 'accent': 'orange', 'customColor': '#ff7a1a', 'language': 'system',
     'themePreset': 'studio', 'interfaceDensity': 'comfortable',
-    'fontFamily': 'vazirmatn', 'fontScale': 1.0, 'dynamicArtwork': True, 'reduceMotion': False,
-    'rememberQueue': True, 'resumeLastSong': True, 'minDurationMs': 10_000,
+    'fontFamily': 'vazirmatn', 'fontScale': 1.0, 'customFontName': '', 'dynamicArtwork': True, 'reduceMotion': False,
+    'rememberQueue': True, 'resumeLastSong': True, 'lastSongId': 0, 'lastPosition': 0.0, 'minDurationMs': 10_000,
     'volume': 0.82, 'shuffle': False, 'repeat': 'off', 'playbackRate': 1.0,
     'crossfadeMs': 0, 'gaplessEnabled': True, 'automixEnabled': False, 'advancedAutomixEnabled': True,
     'loudnessNormalization': False, 'normalizationTargetLufs': -14.0, 'normalizationMode': 'smart',
     'lyricsMode': 'auto', 'translationEnabled': True, 'romanizationEnabled': True,
     'lyricsFontSize': 20, 'lyricsAutoScroll': True, 'writeLyricsSidecar': False,
-    'libraryViewMode': 'list', 'strictOfflineMode': False,
+    'offlineLyricsModelPath': '', 'offlineLyricsLanguage': 'auto',
+    'libraryViewMode': 'list', 'strictOfflineMode': False, 'excludedFolders': [],
     'offlineBackupEnabled': True, 'offlineBackupAutoRefresh': True, 'offlineBackupLimit': 100,
     'offlineBackupMood': 'all', 'offlineBackupGenre': 'all',
     'visualizer': 'bars', 'visualizerSensitivity': 1.0,
@@ -141,6 +142,10 @@ class NeoStore:
                 CREATE TABLE IF NOT EXISTS recent_searches(
                     query TEXT PRIMARY KEY COLLATE NOCASE, searched_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS pins(
+                    kind TEXT NOT NULL, item_key TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL, PRIMARY KEY(kind,item_key)
+                );
             ''')
             for name, ddl in [
                 ('year', 'INTEGER NOT NULL DEFAULT 0'), ('disc', 'INTEGER NOT NULL DEFAULT 0'),
@@ -175,6 +180,16 @@ class NeoStore:
             sanitized['crossfadeMs'] = max(0, min(int(sanitized['crossfadeMs']), 12000))
         if 'fontScale' in sanitized:
             sanitized['fontScale'] = max(.8, min(float(sanitized['fontScale']), 1.4))
+        if 'customFontName' in sanitized: sanitized['customFontName'] = str(sanitized['customFontName'])[:160]
+        if 'lastSongId' in sanitized: sanitized['lastSongId'] = max(0, int(sanitized['lastSongId']))
+        if 'lastPosition' in sanitized: sanitized['lastPosition'] = max(0.0, float(sanitized['lastPosition']))
+        if 'offlineLyricsModelPath' in sanitized: sanitized['offlineLyricsModelPath'] = str(sanitized['offlineLyricsModelPath'])[:1000]
+        if 'offlineLyricsLanguage' in sanitized:
+            value = str(sanitized['offlineLyricsLanguage']).strip().lower()
+            sanitized['offlineLyricsLanguage'] = value if re.fullmatch(r'auto|[a-z]{2,3}', value) else 'auto'
+        if 'excludedFolders' in sanitized:
+            values = sanitized['excludedFolders'] if isinstance(sanitized['excludedFolders'], list) else []
+            sanitized['excludedFolders'] = list(dict.fromkeys(str(Path(v).expanduser().resolve()) for v in values if isinstance(v,str) and v.strip()))[:100]
         with self._connect() as db:
             for key, value in sanitized.items():
                 if key in allowed:
@@ -214,10 +229,16 @@ class NeoStore:
             return [str(Path.home())]
 
     def _walk_audio(self, roots: list[str], scan_all: bool = False):
+        excluded = [os.path.normcase(os.path.abspath(str(p))) for p in self.settings().get('excludedFolders', []) if p]
+        def is_excluded(path: str | os.PathLike[str]) -> bool:
+            candidate = os.path.normcase(os.path.abspath(str(path)))
+            return any(candidate == item or candidate.startswith(item + os.sep) for item in excluded)
         for root in roots:
             if not Path(root).exists():
                 continue
             for base, dirs, files in os.walk(root, onerror=lambda _: None):
+                if is_excluded(base): dirs[:] = []; continue
+                dirs[:] = [d for d in dirs if not is_excluded(Path(base) / d)]
                 if scan_all:
                     dirs[:] = [d for d in dirs if d.lower() not in SKIP_DIR_NAMES and not d.startswith('.')]
                 for name in files:
@@ -339,6 +360,18 @@ class NeoStore:
     def set_hidden(self, song_id: int, hidden: bool) -> None:
         with self._connect() as db:
             db.execute('UPDATE songs SET hidden=? WHERE id=?', (1 if hidden else 0, song_id))
+
+    def pins(self) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            return [dict(r) for r in db.execute('SELECT kind,item_key AS itemKey,position,created_at AS createdAt FROM pins ORDER BY position,created_at')]
+
+    def set_pin(self, kind: str, item_key: str, pinned: bool) -> None:
+        if kind not in {'album','artist','genre'} or not item_key.strip(): raise ValueError('Invalid collection pin')
+        with self._connect() as db:
+            if pinned:
+                position=db.execute('SELECT COALESCE(MAX(position),-1)+1 FROM pins').fetchone()[0]
+                db.execute('INSERT INTO pins(kind,item_key,position,created_at) VALUES(?,?,?,?) ON CONFLICT(kind,item_key) DO NOTHING',(kind,item_key.strip(),position,int(time.time())))
+            else: db.execute('DELETE FROM pins WHERE kind=? AND item_key=?',(kind,item_key.strip()))
 
     def add_history(self, song_id: int, skipped: bool = False) -> None:
         now = int(time.time())
@@ -626,9 +659,10 @@ class NeoStore:
             lyrics = [dict(r) for r in db.execute('SELECT * FROM lyrics')]
             profiles = [dict(r) for r in db.execute('SELECT * FROM track_profiles')]
             song_user = [dict(r) for r in db.execute('SELECT path,favorite,hidden,play_count,skip_count,last_played FROM songs')]
+            pins = [dict(r) for r in db.execute('SELECT * FROM pins ORDER BY position')]
         return {'version': 2, 'createdAt': int(time.time()), 'settings': self.settings(), 'folders': self.folders(),
                 'playlists': playlists, 'playlistSongs': playlist_songs, 'playlistFolders': playlist_folders,
-                'lyrics': lyrics, 'trackProfiles': profiles, 'songUser': song_user}
+                'lyrics': lyrics, 'trackProfiles': profiles, 'songUser': song_user, 'pins': pins}
 
     def restore(self, payload: dict[str, Any]) -> dict[str, Any]:
         self.patch_settings(payload.get('settings', {}))
@@ -636,6 +670,10 @@ class NeoStore:
             try: self.add_folder(folder)
             except Exception: pass
         with self._connect() as db:
+            db.execute('DELETE FROM pins')
+            for row in payload.get('pins', []):
+                if row.get('kind') in {'album','artist','genre'} and row.get('item_key'):
+                    db.execute('INSERT OR IGNORE INTO pins(kind,item_key,position,created_at) VALUES(?,?,?,?)',(row['kind'],row['item_key'],int(row.get('position',0)),int(row.get('created_at',time.time()))))
             for row in payload.get('songUser', []):
                 db.execute('UPDATE songs SET favorite=?,hidden=?,play_count=?,skip_count=?,last_played=? WHERE path=?',
                     (row.get('favorite',0), row.get('hidden',0), row.get('play_count',0), row.get('skip_count',0), row.get('last_played',0), row.get('path','')))
@@ -696,6 +734,7 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if parsed.path == '/api/cache': return self._json(store.cache_status())
                 if parsed.path == '/api/folders': return self._json(store.folders())
                 if parsed.path == '/api/system-roots': return self._json(store.system_roots())
+                if parsed.path == '/api/pins': return self._json(store.pins())
                 if parsed.path == '/api/playlists': return self._json(store.playlists(qs.get('hidden',['0'])[0] == '1'))
                 if parsed.path == '/api/playlist-folders': return self._json(store.playlist_folders())
                 if len(parts) == 3 and parts[:2] == ['api','playlists']:
@@ -723,6 +762,7 @@ def create_server(store: NeoStore, web_root: str | os.PathLike[str], host: str =
                 if self.path == '/api/scan-system': return self._json(store.scan(True))
                 if self.path == '/api/favorites': store.set_favorite(int(body['song_id']), bool(body['favorite'])); return self._json({'ok':True})
                 if self.path == '/api/hide': store.set_hidden(int(body['song_id']), bool(body['hidden'])); return self._json({'ok':True})
+                if self.path == '/api/pins': store.set_pin(str(body.get('kind','')),str(body.get('item_key','')),bool(body.get('pinned'))); return self._json({'ok':True})
                 if self.path == '/api/playlists': return self._json(store.create_playlist(str(body.get('name','')), body.get('folder_id')), 201)
                 if self.path == '/api/playlist-folders': return self._json(store.create_playlist_folder(str(body.get('name','')), body.get('parent_id')), 201)
                 if len(parts) == 4 and parts[:2] == ['api','playlists'] and parts[3] == 'songs': store.add_playlist_song(int(parts[2]), int(body['song_id'])); return self._json({'ok':True})
