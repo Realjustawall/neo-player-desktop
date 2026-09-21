@@ -1,10 +1,10 @@
 {
   "name": "neo-player-desktop",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview"
   },
