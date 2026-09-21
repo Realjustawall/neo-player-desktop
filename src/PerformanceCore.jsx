@@ -1,7 +1,28 @@
 import{useEffect,useRef}from'react'
+import{api}from'./api'
 
 export default function PerformanceCore(){
   const warmed=useRef(new Set())
+
+  useEffect(()=>{
+    const original=api.patchSettings?.bind(api)
+    if(!original||api.__neoBatchedSettings)return
+    let timer=0,pending={},waiters=[]
+    api.__neoBatchedSettings=true
+    api.patchSettings=patch=>new Promise((resolve,reject)=>{
+      pending={...pending,...patch}
+      waiters.push([resolve,reject])
+      clearTimeout(timer)
+      timer=setTimeout(async()=>{
+        const batch=pending,list=waiters
+        pending={};waiters=[]
+        try{const result=await original(batch);list.forEach(([ok])=>ok(result))}
+        catch(error){list.forEach(([,bad])=>bad(error))}
+      },90)
+    })
+    return()=>{clearTimeout(timer);api.patchSettings=original;delete api.__neoBatchedSettings}
+  },[])
+
   useEffect(()=>{
     const setAudio=()=>document.querySelectorAll('audio').forEach(a=>{a.preload='auto'})
     setAudio()
@@ -29,24 +50,22 @@ export default function PerformanceCore(){
       warmed.current.add(id)
       if(warmed.current.size>24){const first=warmed.current.values().next().value;warmed.current.delete(first)}
       try{
-        const controller=new AbortController()
-        const res=await fetch(`/media/${id}`,{headers:{Range:'bytes=0-196607'},cache:'force-cache',signal:controller.signal})
+        const res=await fetch(`/media/${id}`,{headers:{Range:'bytes=0-262143'},cache:'force-cache'})
         const reader=res.body?.getReader?.()
-        if(reader){await reader.read();await reader.cancel()}else controller.abort()
+        if(reader){await reader.read();await reader.cancel()}
       }catch{}
     }
-    const hover=e=>{const row=e.target.closest?.('.track-row[data-neo-song-id]');if(row)warm(row.dataset.neoSongId)}
-    const down=e=>{const row=e.target.closest?.('.track-row[data-neo-song-id]');if(row)warm(row.dataset.neoSongId)}
-    document.addEventListener('pointerover',hover,{passive:true,capture:true})
-    document.addEventListener('pointerdown',down,{passive:true,capture:true})
-    return()=>{document.removeEventListener('pointerover',hover,true);document.removeEventListener('pointerdown',down,true)}
+    const prewarm=e=>{const row=e.target.closest?.('.track-row[data-neo-song-id]');if(row)warm(row.dataset.neoSongId)}
+    document.addEventListener('pointerover',prewarm,{passive:true,capture:true})
+    document.addEventListener('pointerdown',prewarm,{passive:true,capture:true})
+    return()=>{document.removeEventListener('pointerover',prewarm,true);document.removeEventListener('pointerdown',prewarm,true)}
   },[])
 
   useEffect(()=>{
     let scheduled=false
     const optimize=()=>{
       scheduled=false
-      document.querySelectorAll('img').forEach(img=>{if(!img.closest('.playerbar,.neo-cinema')){img.loading='lazy';img.decoding='async'}})
+      document.querySelectorAll('img').forEach(img=>{if(!img.closest('.playerbar,.neo-cinema')){img.loading='lazy';img.decoding='async';img.fetchPriority='low'}})
     }
     const schedule=()=>{if(scheduled)return;scheduled=true;(window.requestIdleCallback||window.requestAnimationFrame)(optimize)}
     schedule()
