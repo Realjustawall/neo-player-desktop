@@ -13,7 +13,7 @@ export default function FeatureHubLoader(){
       setHub(()=>mod.default)
       let tries=0
       const trigger=()=>{
-        const button=document.querySelector('.neo-plus-fab')
+        const button=[...document.querySelectorAll('.neo-plus-fab')].find(x=>!x.classList.contains('neo-plus-loader'))
         if(button){button.click();return}
         if(tries++<24)requestAnimationFrame(trigger)
       }
@@ -25,7 +25,7 @@ export default function FeatureHubLoader(){
     const check=()=>{
       const panel=document.querySelector('.neo-plus-panel')
       if(panel)seenOpen.current=true
-      else if(seenOpen.current&&document.querySelector('.neo-plus-fab')){seenOpen.current=false;setHub(null)}
+      else if(seenOpen.current&&document.querySelector('.neo-plus-fab:not(.neo-plus-loader)')){seenOpen.current=false;setHub(null)}
     }
     const observer=new MutationObserver(()=>requestAnimationFrame(check))
     observer.observe(document.body,{childList:true,subtree:true})
@@ -33,5 +33,5 @@ export default function FeatureHubLoader(){
     return()=>{observer.disconnect();clearTimeout(id)}
   },[Hub])
   if(Hub)return <Hub/>
-  return <button className="neo-plus-loader" onClick={open} disabled={loading} title="NEO+"><Sparkles/><span>NEO+</span></button>
+  return <button className="neo-plus-fab neo-plus-loader" onClick={open} disabled={loading} title="NEO+"><Sparkles/><span>NEO+</span></button>
 }
