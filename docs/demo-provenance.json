@@ -1,0 +1,41 @@
+{
+  "source_commit": "654ab26d8997e7b110acc27ee67c68bfc40c26bf",
+  "captures": [
+    {
+      "path": "docs/assets/screenshots/en/01-home.webp",
+      "language": "en",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "441f4eb6773f1c5d6620aae8c0860c84eaaf137906c78f3725ca589ab3ee2dda"
+    },
+    {
+      "path": "docs/assets/screenshots/en/02-now-playing.webp",
+      "language": "en",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "481dc390f9ec3f45d659a2363a8b91b810eff547ae31f085f9750452ed175950"
+    },
+    {
+      "path": "docs/assets/screenshots/en/04-appearance.webp",
+      "language": "en",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "e165cdb184d82257c1885f622d86255ec2a6a5327703f05a41d53b3082deada9"
+    },
+    {
+      "path": "docs/assets/screenshots/fa/01-home.webp",
+      "language": "fa",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "1bfb5064b5afe55bb9be8f93c2c99858efdd93c6fe840e0c558b4a68266c7745"
+    },
+    {
+      "path": "docs/assets/screenshots/fa/02-now-playing.webp",
+      "language": "fa",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "3e82692975200a791d3a52f0629c00849291dc3f013616fcda4f79e82ae96080"
+    },
+    {
+      "path": "docs/assets/screenshots/fa/04-appearance.webp",
+      "language": "fa",
+      "capture_method": "Real React UI + Python/SQLite backend; browser host on Linux",
+      "source_png_sha256": "5507b37baa08919535cc4b3f873c7ca6633332c916250ae775023e573d04688e"
+    }
+  ]
+}
